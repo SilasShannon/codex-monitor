@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "codex-monitor"
+version = "0.1.0"
+description = "Local, read-only observability for OpenAI Codex sessions"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Codex Monitor contributors"}]
+dependencies = ["tomli>=2; python_version < '3.11'"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.6"]
+
+[project.scripts]
+codex-monitor = "codex_monitor.cli:main"
+xmon = "codex_monitor.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["codex_monitor*"]
+
+[tool.setuptools.package-data]
+"codex_monitor.pricing" = ["models.json"]
+"codex_monitor.web" = ["static/index.html", "static/assets/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

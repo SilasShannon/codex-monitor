@@ -1,0 +1,9 @@
+Codex Monitor was designed after studying Claude Code Monitor:
+https://github.com/kchernev/claude-code-monitor
+
+Claude Code Monitor is Copyright (c) 2026 Kaloyan Chernev and licensed under
+the MIT License. Its ideas around local-first monitoring, project grouping,
+deduplication, cache safety, localhost web security, and read-only Git
+observation informed this project. Codex Monitor's Codex source adapter,
+normalized SQLite schema, byte-offset incremental parser, CLI, and web UI were
+written for Codex's distinct rollout event format.
