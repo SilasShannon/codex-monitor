@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class Database:
@@ -36,6 +36,13 @@ class Database:
             yield self.connection
 
     def _migrate(self) -> None:
+        try:
+            row = self.connection.execute(
+                "SELECT value FROM metadata WHERE key='schema_version'"
+            ).fetchone()
+            previous_version = int(row[0]) if row else 0
+        except (sqlite3.OperationalError, ValueError):
+            previous_version = 0
         self.connection.executescript(
             """
             CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -67,6 +74,13 @@ class Database:
               event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, timestamp TEXT, text TEXT NOT NULL,
               FOREIGN KEY(session_id) REFERENCES sessions(session_id)
             );
+            CREATE TABLE IF NOT EXISTS assistant_messages(
+              event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, timestamp TEXT,
+              text TEXT NOT NULL, phase TEXT,
+              FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+            );
+            CREATE INDEX IF NOT EXISTS assistant_messages_session_time
+              ON assistant_messages(session_id,timestamp);
             CREATE TABLE IF NOT EXISTS tool_calls(
               call_id TEXT NOT NULL, session_id TEXT NOT NULL, timestamp TEXT, name TEXT NOT NULL,
               kind TEXT NOT NULL, server TEXT, status TEXT, duration_ms REAL, arguments_json TEXT,
@@ -123,6 +137,10 @@ class Database:
         )
         self._ensure_column("sessions", "cache_write_input_tokens", "INTEGER")
         self._ensure_column("token_snapshots", "cache_write_input_tokens", "INTEGER")
+        if previous_version and previous_version < 4:
+            # Revisit historical files once so newly normalized visible assistant
+            # messages can be populated without deleting any existing analytics.
+            self.connection.execute("UPDATE source_files SET offset=0,partial=X''")
         self.connection.execute(
             "INSERT OR REPLACE INTO metadata(key,value) VALUES('schema_version',?)",
             (str(SCHEMA_VERSION),),

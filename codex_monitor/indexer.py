@@ -23,6 +23,12 @@ class Indexer:
         self._project_cache: dict[str, ProjectRecord | None] = {}
 
     def scan(self) -> dict[str, int]:
+        if not self.config.log_user_prompts:
+            # Prompt-derived data is monitor-owned and safe to remove. Never
+            # retain it when the privacy setting is disabled.
+            with self.db.transaction():
+                self.db.connection.execute("DELETE FROM prompts")
+                self.db.connection.execute("UPDATE sessions SET title=NULL")
         result = {"files": 0, "records": 0, "corrupt": 0}
         for path in discover_session_files(self.config.data_roots):
             result["files"] += 1
@@ -130,7 +136,7 @@ class Indexer:
             self.db.connection.execute(
                 "UPDATE sessions SET event_count=event_count+1 WHERE session_id=?", (session.session_id,)
             )
-        if item.prompt:
+        if item.prompt and self.config.log_user_prompts:
             self.db.connection.execute(
                 "INSERT OR IGNORE INTO prompts VALUES(?,?,?,?)",
                 (event.event_id, event.session_id, event.timestamp, item.prompt),
@@ -138,6 +144,12 @@ class Indexer:
             if not session.title:
                 title = " ".join(item.prompt.split())[:100]
                 self.db.connection.execute("UPDATE sessions SET title=COALESCE(title,?) WHERE session_id=?", (title, session.session_id))
+        if item.assistant_message:
+            self.db.connection.execute(
+                "INSERT OR IGNORE INTO assistant_messages VALUES(?,?,?,?,?)",
+                (event.event_id, event.session_id, event.timestamp, item.assistant_message,
+                 event.data.get("phase")),
+            )
         if item.tool_call:
             call = item.tool_call
             self.db.connection.execute(
@@ -176,13 +188,21 @@ class Indexer:
             )
 
     def _mark_active(self) -> None:
-        cutoff = time.time() - max(self.config.scan_interval * 3, 10)
+        cutoff = time.time() - max(self.config.scan_interval * 3, 60)
         self.db.connection.execute("UPDATE sessions SET active=0")
         for row in self.db.connection.execute("SELECT session_id,source_file,ended_at FROM sessions"):
             try:
+                lifecycle = self.db.connection.execute(
+                    """SELECT subtype FROM events WHERE session_id=?
+                       AND subtype IN ('task_started','task_complete')
+                       ORDER BY timestamp DESC LIMIT 1""",
+                    (row["session_id"],),
+                ).fetchone()
+                if lifecycle and lifecycle["subtype"] == "task_started":
+                    active = True
                 # Codex task_complete ends a turn, not a resumable session. Recent
                 # append activity is the reliable V1 signal for session liveness.
-                if str(row["source_file"]).startswith("otel:"):
+                elif str(row["source_file"]).startswith("otel:"):
                     timestamp = self.db.connection.execute(
                         "SELECT MAX(timestamp) FROM telemetry_events WHERE session_id=?",
                         (row["session_id"],),
@@ -190,8 +210,10 @@ class Indexer:
                     active = bool(timestamp and datetime.fromisoformat(
                         timestamp.replace("Z", "+00:00")
                     ).timestamp() >= cutoff)
-                else:
+                elif not lifecycle:
                     active = Path(row["source_file"]).stat().st_mtime >= cutoff
+                else:
+                    active = False
             except OSError:
                 active = False
             if active:

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from codex_monitor.indexer import Indexer
 from codex_monitor.live import render
 from codex_monitor.queries import overview, projects, session_detail, sessions
 
 
 def test_queries_and_search(config, db) -> None:
-    Indexer(config, db).scan()
+    Indexer(replace(config, log_user_prompts=True), db).scan()
     assert overview(db)["sessions"] == 1
     assert projects(db)[0]["name"] == "example-project"
     assert sessions(db, search="safe parser")[0]["session_id"] == "session-test-1"
@@ -20,3 +22,9 @@ def test_live_never_fabricates_activity(config, db) -> None:
     output = render(db)
     assert "current activity" not in output.lower()
     assert "No reliably active" in output
+
+
+def test_prompt_logging_is_opt_in(config, db) -> None:
+    Indexer(config, db).scan()
+    assert db.connection.execute("SELECT COUNT(*) FROM prompts").fetchone()[0] == 0
+    assert db.connection.execute("SELECT title FROM sessions").fetchone()[0] is None

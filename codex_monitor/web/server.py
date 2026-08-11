@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ..analytics import cost_summary, session_costs, usage_breakdown, usage_timeseries
+from ..briefings import active_briefings, session_briefing
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
@@ -102,6 +103,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json(usage_breakdown(self.db, dimension, sort_by=sort_by))
             except ValueError as exc:
                 return self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        if parsed.path == "/api/live/briefings":
+            return self._json(active_briefings(self.db))
+        briefing_prefix = "/api/sessions/briefing/"
+        if parsed.path.startswith(briefing_prefix):
+            session_id = unquote(parsed.path[len(briefing_prefix):])
+            if not session_id or len(session_id) > 500 or "/" in session_id:
+                return self._json({"error": "invalid session id"}, HTTPStatus.BAD_REQUEST)
+            briefing = session_briefing(self.db, session_id)
+            return self._json(briefing or {"error": "not found"}, 200 if briefing else 404)
         if parsed.path == "/api/projects":
             return self._json(projects(self.db))
         if parsed.path == "/api/sessions":

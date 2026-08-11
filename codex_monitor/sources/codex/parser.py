@@ -17,6 +17,7 @@ class ParsedRecord:
     event: NormalizedEvent
     session: SessionRecord
     prompt: str | None = None
+    assistant_message: str | None = None
     tool_call: ToolCall | None = None
     tool_result: dict[str, Any] | None = None
     token_usage: TokenUsage | None = None
@@ -145,6 +146,8 @@ class CodexEventParser:
             out.event.data = {"role": role, "phase": payload.get("phase")}
             if role == "user":
                 out.prompt = _text_content(payload)
+            elif role == "assistant":
+                out.assistant_message = _text_content(payload)
         elif kind in {"function_call", "custom_tool_call", "tool_search_call", "web_search_call"}:
             call_id = str(payload.get("call_id") or payload.get("id") or out.event.event_id)
             raw_name = str(payload.get("name") or ("tool_search" if kind == "tool_search_call" else "web_search"))
@@ -196,7 +199,10 @@ class CodexEventParser:
                     change_type = change.get("type", "edit") if isinstance(change, dict) else "edit"
                     action = {"add": "created", "delete": "deleted", "update": "edited"}.get(str(change_type).lower(), "edited")
                     out.file_activity.append((str(path), action, "patch_apply_end"))
-        elif kind in {"task_started", "task_complete", "thread_settings_applied", "agent_message", "agent_reasoning", "web_search_end", "thread_rolled_back"}:
+        elif kind == "agent_message":
+            out.assistant_message = _text_content(payload)
+            out.event.data = {"phase": payload.get("phase")}
+        elif kind in {"task_started", "task_complete", "thread_settings_applied", "agent_reasoning", "web_search_end", "thread_rolled_back"}:
             out.event.data = {key: payload.get(key) for key in ("turn_id", "duration_ms", "phase") if key in payload}
         else:
             self._unsupported(out, raw)
@@ -213,6 +219,16 @@ class CodexEventParser:
             out.tool_result = {"call_id": call_id, "success": item.get("exit_code") == 0, "duration_ms": duration, "output": str(item.get("aggregated_output", ""))[:512]}
         elif item_type == "UserMessage":
             out.prompt = _text_content(item)
+        elif item_type == "AgentMessage":
+            out.assistant_message = _text_content(item)
+            out.event.data["phase"] = item.get("phase")
+        elif item_type == "FileChange" and isinstance(item.get("changes"), dict):
+            for path, change in item["changes"].items():
+                change_type = change.get("type", "update") if isinstance(change, dict) else "update"
+                action = {"add": "created", "delete": "deleted"}.get(
+                    str(change_type).lower(), "edited"
+                )
+                out.file_activity.append((str(path), action, "item_completed:FileChange"))
 
     @staticmethod
     def _unsupported(out: ParsedRecord, raw: dict[str, Any]) -> ParsedRecord:
