@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -15,7 +16,11 @@ def codex_root(tmp_path: Path) -> Path:
     target = root / "sessions" / "2026" / "08" / "10"
     target.mkdir(parents=True)
     source = Path(__file__).parent / "fixtures" / "rollout-basic.jsonl"
-    shutil.copy2(source, target / "rollout-2026-test.jsonl")
+    rollout = target / "rollout-2026-test.jsonl"
+    shutil.copy2(source, rollout)
+    # Git checkouts give fixtures a fresh mtime, but liveness intentionally uses
+    # recent file appends. Keep this historical fixture deterministically stale.
+    os.utime(rollout, (0, 0))
     return root
 
 
