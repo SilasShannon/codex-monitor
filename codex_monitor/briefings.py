@@ -87,6 +87,8 @@ def session_briefing(db: Database, session_id: str) -> dict | None:
                             f"and {len(test_runs) - passed - failed} have no reliable result.")
     if not observations:
         observations.append("No tool, file, or test activity has been reliably observed yet.")
+    phase = _phase(test_runs, files, tools)
+    activity_story = _activity_story(phase, test_runs, files, tools)
 
     return {
         "session_id": session_id,
@@ -98,6 +100,9 @@ def session_briefing(db: Database, session_id: str) -> dict | None:
         "last_activity": session["last_activity"],
         "request": request,
         "plain_language_status": _status(bool(session["active"]), request, latest_update),
+        "phase": phase,
+        "activity_story": activity_story,
+        "questions_to_ask": _questions(test_runs, files, concepts),
         "latest_visible_update": latest_update,
         "observations": observations,
         "commands": commands[:12],
@@ -118,6 +123,15 @@ def session_briefing(db: Database, session_id: str) -> dict | None:
 def active_briefings(db: Database) -> list[dict]:
     ids = [row[0] for row in db.connection.execute(
         "SELECT session_id FROM sessions WHERE active=1 ORDER BY last_activity DESC"
+    )]
+    return [briefing for session_id in ids if (briefing := session_briefing(db, session_id))]
+
+
+def recent_briefings(db: Database, limit: int = 12) -> list[dict]:
+    ids = [row[0] for row in db.connection.execute(
+        """SELECT session_id FROM sessions
+           ORDER BY active DESC,COALESCE(last_activity,started_at) DESC LIMIT ?""",
+        (limit,),
     )]
     return [briefing for session_id in ids if (briefing := session_briefing(db, session_id))]
 
@@ -143,6 +157,55 @@ def _status(active: bool, request: str | None, latest: str | None) -> str:
     if latest:
         return f"{state}. The latest visible Codex update says: “{latest}”"
     return f"{state}, but there is not enough visible evidence to describe its progress yet."
+
+
+def _phase(test_runs, files, tools) -> str:
+    if any(item["success"] is False for item in test_runs):
+        return "Debugging"
+    if test_runs:
+        return "Verifying"
+    if files:
+        return "Implementing"
+    if tools:
+        return "Investigating"
+    return "Waiting for evidence"
+
+
+def _activity_story(phase: str, test_runs, files, tools) -> list[str]:
+    story = [f"Current observed phase: {phase}."]
+    if tools:
+        kinds = Counter(_tool_label(row) for row in tools)
+        story.append("Codex interacted with " + ", ".join(
+            f"{name} ({count})" for name, count in kinds.most_common(4)
+        ) + ". These calls show activity, but not private reasoning or intent.")
+    if files:
+        actions = Counter(row["action"] for row in files)
+        story.append("The implementation footprint currently includes " + ", ".join(
+            f"{count} {action}" for action, count in sorted(actions.items())
+        ) + ".")
+    if test_runs:
+        passed = sum(item["success"] is True for item in test_runs)
+        failed = sum(item["success"] is False for item in test_runs)
+        story.append(
+            f"Verification evidence includes {len(test_runs)} test command(s): "
+            f"{passed} passed, {failed} failed, and {len(test_runs) - passed - failed} unknown."
+        )
+    if len(story) == 1:
+        story.append("There is not enough structured activity yet to explain the development work.")
+    return story
+
+
+def _questions(test_runs, files, concepts) -> list[str]:
+    questions = ["What observable change should a user or developer expect from this work?"]
+    if any(item["success"] is False for item in test_runs):
+        questions.append("What caused the failing test, and what evidence confirms the fix?")
+    elif files and not test_runs:
+        questions.append("How will these file changes be tested or otherwise verified?")
+    elif test_runs:
+        questions.append("Which behaviors do these tests protect against regressing?")
+    if concepts:
+        questions.append(f"How does {concepts[0]['name'].lower()} apply to this project?")
+    return questions[:3]
 
 
 def _concepts(commands, files, tools) -> list[dict[str, str]]:
