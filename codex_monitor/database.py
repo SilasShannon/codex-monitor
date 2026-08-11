@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class Database:
@@ -104,6 +104,21 @@ class Database:
               reasoning_output_tokens INTEGER, total_tokens INTEGER,
               FOREIGN KEY(event_id) REFERENCES telemetry_events(event_id)
             );
+            CREATE TABLE IF NOT EXISTS telemetry_spans(
+              span_id TEXT PRIMARY KEY, trace_id TEXT NOT NULL, parent_span_id TEXT,
+              name TEXT NOT NULL, start_time TEXT, end_time TEXT, status TEXT,
+              session_id TEXT, model TEXT, attributes_json TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'OTEL'
+            );
+            CREATE INDEX IF NOT EXISTS telemetry_spans_trace ON telemetry_spans(trace_id,start_time);
+            CREATE TABLE IF NOT EXISTS telemetry_metrics(
+              point_id TEXT PRIMARY KEY, timestamp TEXT, name TEXT NOT NULL,
+              metric_type TEXT NOT NULL, value REAL, count INTEGER, sum REAL,
+              session_id TEXT, model TEXT, attributes_json TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'OTEL'
+            );
+            CREATE INDEX IF NOT EXISTS telemetry_metrics_name_time
+              ON telemetry_metrics(name,timestamp);
             """
         )
         self._ensure_column("sessions", "cache_write_input_tokens", "INTEGER")

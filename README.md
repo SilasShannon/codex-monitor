@@ -10,6 +10,10 @@ incremental historical discovery of `~/.codex/sessions/**/rollout-*.jsonl`.
 It normalizes records into a private SQLite cache and powers a React dashboard
 with real token, cache, project, session, and deterministic cost data.
 
+The current dashboard includes functional Overview, Tokens, and Cost views,
+30-day charts, project/model/session breakdowns, cache economics, and explicit
+coverage indicators for sessions that cannot be priced reliably.
+
 ## Install
 
 Python 3.10+ is supported. `pipx` is recommended:
@@ -35,6 +39,7 @@ pytest
 ```bash
 codex-monitor                 # live terminal dashboard
 codex-monitor setup           # read-only environment discovery
+codex-monitor setup --configure-otel --yes  # backed-up, opt-in local OTel setup
 codex-monitor live
 codex-monitor sessions
 codex-monitor sessions --search project-name

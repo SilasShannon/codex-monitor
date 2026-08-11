@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ..analytics import cost_summary, session_costs
+from ..analytics import cost_summary, session_costs, usage_breakdown, usage_timeseries
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
@@ -87,6 +87,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(cost_summary(self.db))
         if parsed.path == "/api/cost/sessions":
             return self._json(session_costs(self.db))
+        if parsed.path == "/api/analytics/timeseries":
+            query = parse_qs(parsed.query)
+            try:
+                days = min(max(int(query.get("days", [30])[0]), 1), 366)
+            except ValueError:
+                return self._json({"error": "invalid days"}, HTTPStatus.BAD_REQUEST)
+            return self._json(usage_timeseries(self.db, days))
+        if parsed.path == "/api/analytics/breakdown":
+            query = parse_qs(parsed.query)
+            dimension = query.get("dimension", ["project"])[0]
+            sort_by = query.get("sort", ["tokens"])[0]
+            try:
+                return self._json(usage_breakdown(self.db, dimension, sort_by=sort_by))
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/projects":
             return self._json(projects(self.db))
         if parsed.path == "/api/sessions":

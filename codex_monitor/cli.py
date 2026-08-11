@@ -11,6 +11,7 @@ from .indexer import Indexer
 from .live import run as run_live
 from .platform import current_platform
 from .queries import projects, session_detail, sessions
+from .setup import configure_codex_otel
 from .web.server import serve
 
 
@@ -31,7 +32,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--database", type=Path)
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("setup")
+    setup = sub.add_parser("setup")
+    setup.add_argument("--configure-otel", action="store_true",
+                       help="append loopback OTel exporters to Codex config")
+    setup.add_argument("--yes", action="store_true", help="confirm Codex config modification")
     sub.add_parser("live").add_argument("--once", action="store_true")
     session_cmd = sub.add_parser("sessions")
     session_cmd.add_argument("--search")
@@ -72,7 +76,18 @@ def main(argv: list[str] | None = None) -> int:
             print("Codex Monitor Setup\n")
             for key, value in checks.items():
                 print(f"✓ {key.replace('_', ' ').title()}: {value}")
-            print("\nDiscovery is read-only. Codex configuration has not been modified.")
+            if args.configure_otel:
+                if not args.yes:
+                    print("\nPass --yes with --configure-otel after reviewing the endpoint.", file=sys.stderr)
+                    return 2
+                codex_config = info.codex_home / "config.toml"
+                endpoint = f"http://{config.otel_host}:{config.otel_port}/v1/logs"
+                result = configure_codex_otel(codex_config, endpoint)
+                print(f"\n{result.reason}: {result.config_path}")
+                if result.backup_path:
+                    print(f"Backup: {result.backup_path}")
+            else:
+                print("\nDiscovery is read-only. Codex configuration has not been modified.")
             return 0
         if args.command == "reindex":
             if not args.yes:
