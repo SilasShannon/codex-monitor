@@ -1,0 +1,10 @@
+{"timestamp":"2026-08-10T12:00:00Z","type":"session_meta","payload":{"id":"session-test-1","timestamp":"2026-08-10T12:00:00Z","cwd":"/tmp/example-project","cli_version":"0.147.0","model_provider":"openai"}}
+{"timestamp":"2026-08-10T12:00:01Z","type":"turn_context","payload":{"turn_id":"turn-1","cwd":"/tmp/example-project","model":"gpt-test-codex","comp_hash":null,"summary":null}}
+{"timestamp":"2026-08-10T12:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"Build a safe parser"}}
+{"timestamp":"2026-08-10T12:00:03Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"call-shell","arguments":"{\"cmd\":\"pytest\"}"}}
+{"timestamp":"2026-08-10T12:00:04Z","type":"response_item","payload":{"type":"function_call_output","call_id":"call-shell","output":"ok"}}
+{"timestamp":"2026-08-10T12:00:05Z","type":"response_item","payload":{"type":"function_call","name":"mcp__filesystem__read_file","call_id":"call-mcp","arguments":"{\"path\":\"README.md\"}"}}
+{"timestamp":"2026-08-10T12:00:06Z","type":"event_msg","payload":{"type":"patch_apply_end","call_id":"patch-1","success":true,"changes":{"/tmp/example-project/new.py":{"type":"add","content":"pass"}}}}
+{"timestamp":"2026-08-10T12:00:07Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":20,"reasoning_output_tokens":5,"total_tokens":120},"last_token_usage":{"input_tokens":10,"cached_input_tokens":4,"output_tokens":2,"reasoning_output_tokens":1,"total_tokens":12},"model_context_window":200000}}}
+{"timestamp":"2026-08-10T12:00:08Z","type":"turn_context","payload":{"turn_id":"turn-2","cwd":"/tmp/example-project","model":"gpt-test-codex-2","comp_hash":"abc","summary":"user-visible compaction summary"}}
+{"timestamp":"2026-08-10T12:00:09Z","type":"future_event","payload":{"type":"new_thing","secret":"retained locally"}}
