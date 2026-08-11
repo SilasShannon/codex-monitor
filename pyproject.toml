@@ -22,6 +22,10 @@ xmon = "codex_monitor.cli:main"
 [tool.setuptools.packages.find]
 include = ["codex_monitor*"]
 
+[tool.setuptools.package-data]
+"codex_monitor.pricing" = ["models.json"]
+"codex_monitor.web" = ["static/index.html", "static/assets/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"

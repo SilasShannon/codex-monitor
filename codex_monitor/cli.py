@@ -9,6 +9,7 @@ from .config import Config, load_config
 from .database import Database
 from .indexer import Indexer
 from .live import run as run_live
+from .platform import current_platform
 from .queries import projects, session_detail, sessions
 from .web.server import serve
 
@@ -30,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--database", type=Path)
     sub = parser.add_subparsers(dest="command")
+    sub.add_parser("setup")
     sub.add_parser("live").add_argument("--once", action="store_true")
     session_cmd = sub.add_parser("sessions")
     session_cmd.add_argument("--search")
@@ -55,6 +57,23 @@ def main(argv: list[str] | None = None) -> int:
     db = Database(config.database_path)
     try:
         indexer = Indexer(config, db)
+        if args.command == "setup":
+            info = current_platform()
+            checks = {
+                "platform": "WSL2" if info.is_wsl else info.system,
+                "codex_executable": str(info.executable("codex") or "not found"),
+                "codex_home": str(info.codex_home),
+                "codex_sessions": str(info.codex_home / "sessions"),
+                "monitor_config": str(info.monitor_config),
+                "database": str(config.database_path),
+                "otel_logs_endpoint": f"http://{config.otel_host}:{config.otel_port}/v1/logs",
+                "prompt_logging": "disabled" if not config.log_user_prompts else "enabled",
+            }
+            print("Codex Monitor Setup\n")
+            for key, value in checks.items():
+                print(f"✓ {key.replace('_', ' ').title()}: {value}")
+            print("\nDiscovery is read-only. Codex configuration has not been modified.")
+            return 0
         if args.command == "reindex":
             if not args.yes:
                 print("Reindex deletes only Codex Monitor's derived database. Pass --yes to continue.", file=sys.stderr)

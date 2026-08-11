@@ -6,7 +6,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Database:
@@ -52,7 +52,8 @@ class Database:
               session_id TEXT PRIMARY KEY, source_file TEXT NOT NULL, started_at TEXT, ended_at TEXT,
               last_activity TEXT, cwd TEXT, project_key TEXT, model TEXT, cli_version TEXT, title TEXT,
               active INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER, cached_input_tokens INTEGER,
-              output_tokens INTEGER, reasoning_output_tokens INTEGER, total_tokens INTEGER,
+              cache_write_input_tokens INTEGER, output_tokens INTEGER,
+              reasoning_output_tokens INTEGER, total_tokens INTEGER,
               context_window INTEGER, event_count INTEGER NOT NULL DEFAULT 0,
               FOREIGN KEY(project_key) REFERENCES projects(project_key)
             );
@@ -81,17 +82,39 @@ class Database:
             );
             CREATE TABLE IF NOT EXISTS token_snapshots(
               event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, timestamp TEXT, input_tokens INTEGER,
-              cached_input_tokens INTEGER, output_tokens INTEGER, reasoning_output_tokens INTEGER,
+              cached_input_tokens INTEGER, cache_write_input_tokens INTEGER, output_tokens INTEGER,
+              reasoning_output_tokens INTEGER,
               total_tokens INTEGER, context_window INTEGER
             );
             CREATE TABLE IF NOT EXISTS unsupported_events(
               event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, timestamp TEXT, top_type TEXT,
               payload_type TEXT, raw_json TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS telemetry_events(
+              event_id TEXT PRIMARY KEY, timestamp TEXT, name TEXT NOT NULL, severity TEXT,
+              session_id TEXT, model TEXT, attributes_json TEXT NOT NULL,
+              source TEXT NOT NULL DEFAULT 'OTEL'
+            );
+            CREATE INDEX IF NOT EXISTS telemetry_events_session_time
+              ON telemetry_events(session_id, timestamp);
+            CREATE TABLE IF NOT EXISTS telemetry_token_usage(
+              event_id TEXT PRIMARY KEY, timestamp TEXT, session_id TEXT, model TEXT,
+              input_tokens INTEGER, cached_input_tokens INTEGER,
+              cache_write_input_tokens INTEGER, output_tokens INTEGER,
+              reasoning_output_tokens INTEGER, total_tokens INTEGER,
+              FOREIGN KEY(event_id) REFERENCES telemetry_events(event_id)
+            );
             """
         )
+        self._ensure_column("sessions", "cache_write_input_tokens", "INTEGER")
+        self._ensure_column("token_snapshots", "cache_write_input_tokens", "INTEGER")
         self.connection.execute(
             "INSERT OR REPLACE INTO metadata(key,value) VALUES('schema_version',?)",
             (str(SCHEMA_VERSION),),
         )
         self.connection.commit()
+
+    def _ensure_column(self, table: str, column: str, declaration: str) -> None:
+        columns = {row[1] for row in self.connection.execute(f"PRAGMA table_info({table})")}
+        if column not in columns:
+            self.connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")

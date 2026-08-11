@@ -51,9 +51,16 @@ def session_detail(db: Database, session_id: str) -> dict | None:
 def overview(db: Database) -> dict:
     totals = db.connection.execute(
         """SELECT COUNT(*) sessions,COALESCE(SUM(active),0) active_sessions,
-        COALESCE(SUM(total_tokens),0) total_tokens FROM sessions"""
+        COALESCE(SUM(total_tokens),0) total_tokens,
+        COALESCE(SUM(input_tokens),0) input_tokens,
+        COALESCE(SUM(cached_input_tokens),0) cached_input_tokens,
+        COALESCE(SUM(cache_write_input_tokens),0) cache_write_input_tokens,
+        COALESCE(SUM(output_tokens),0) output_tokens FROM sessions"""
     ).fetchone()
     tools = db.connection.execute("SELECT COUNT(*) count FROM tool_calls").fetchone()[0]
     mcp = db.connection.execute("SELECT COUNT(*) count FROM tool_calls WHERE kind='mcp'").fetchone()[0]
     unsupported = db.connection.execute("SELECT COUNT(*) count FROM unsupported_events").fetchone()[0]
-    return {**dict(totals), "tool_calls": tools, "mcp_calls": mcp, "unsupported_events": unsupported}
+    result = dict(totals)
+    denominator = result["input_tokens"] + result["cached_input_tokens"]
+    result["cache_rate"] = result["cached_input_tokens"] / denominator if denominator else None
+    return {**result, "tool_calls": tools, "mcp_calls": mcp, "unsupported_events": unsupported}

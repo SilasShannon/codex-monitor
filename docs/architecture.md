@@ -1,20 +1,39 @@
 # Architecture
 
+Codex Monitor is a local-first pipeline with two Codex-native inputs:
+
 ```text
-Codex CLI → read-only rollout JSONL → Codex adapter → normalized records
-          → incremental private SQLite cache → queries → terminal + web UI
+Codex CLI 0.147+
+  ├─ OTLP/HTTP logs, traces, metrics ──> loopback receiver ─┐
+  └─ read-only rollout JSONL ──> incremental adapter ──────┤
+                                                           v
+platform adapters -> normalized records -> versioned SQLite
+                                             |
+                                  token and cost analytics
+                                             |
+                                  local JSON API -> web UI
 ```
 
-`sources/codex/discovery.py` finds historical rollouts across configurable data
-roots. `parser.py` is the sole raw-format adapter. `models/` defines stable
-entities. `indexer.py` commits normalized sessions, projects, events, prompts,
-tools, results, token snapshots, file activity, and unsupported events.
+OpenTelemetry is the primary live source. Rollout files provide historical
+backfill and fields that OTel does not expose. Source-specific assumptions stay
+under `codex_monitor/sources/`; analytics never parse raw Codex records.
 
-The UI never parses rollout files and Codex never reads its logs to support the
-monitor. SQLite WAL permits dashboard reads during refresh. Milestone 1 uses no
-runtime web framework and makes no network requests.
+SQLite stores provenance and deduplicated event identities. Rollout ingestion
+tracks path, size, nanosecond mtime, byte offset, and an incomplete trailing
+record. Input files and monitored Git repositories are read-only.
 
-Claude Code Monitor informed local-first UX, project grouping, deduplication,
-private-cache handling, background refresh, and web-origin defenses. Its Claude
-transcript parser, agents/workflows, billing rules, and directory encoding were
-not reused because Codex rollouts have a different event model.
+The current OTel receiver accepts OTLP/HTTP JSON at `127.0.0.1:4318/v1/logs`.
+OTLP protobuf, traces, and metrics are the next receiver increments. The web
+server and receiver never bind OTel publicly.
+
+## Verified environment baseline
+
+- WSL2 Ubuntu on ARM64
+- Codex CLI `0.147.0`
+- Python 3.10 and Node 24
+- Codex rollout schema with session metadata, turn context, response items,
+  task lifecycle events, tool items, and cumulative token snapshots
+- Codex OTel event families documented by OpenAI: conversation starts, API
+  requests, SSE/WebSocket events, user prompt metadata, tool decisions/results
+
+See `docs/opentelemetry.md` and `docs/codex-events.md` for evidence and limits.

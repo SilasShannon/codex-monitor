@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 
 from .config import Config
@@ -97,15 +98,18 @@ class Indexer:
         self.db.connection.execute(
             """INSERT INTO sessions(session_id,source_file,started_at,ended_at,last_activity,cwd,project_key,
                model,cli_version,title,active,input_tokens,cached_input_tokens,output_tokens,
-               reasoning_output_tokens,total_tokens,context_window,event_count)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
+               cache_write_input_tokens,reasoning_output_tokens,total_tokens,context_window,event_count)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0)
                ON CONFLICT(session_id) DO UPDATE SET
+               source_file=CASE WHEN sessions.source_file LIKE 'otel:%'
+                 THEN excluded.source_file ELSE sessions.source_file END,
                started_at=COALESCE(sessions.started_at,excluded.started_at),
                ended_at=COALESCE(excluded.ended_at,sessions.ended_at),last_activity=excluded.last_activity,
                cwd=COALESCE(excluded.cwd,sessions.cwd),project_key=COALESCE(excluded.project_key,sessions.project_key),
                model=COALESCE(excluded.model,sessions.model),cli_version=COALESCE(excluded.cli_version,sessions.cli_version),
                input_tokens=COALESCE(excluded.input_tokens,sessions.input_tokens),
                cached_input_tokens=COALESCE(excluded.cached_input_tokens,sessions.cached_input_tokens),
+               cache_write_input_tokens=COALESCE(excluded.cache_write_input_tokens,sessions.cache_write_input_tokens),
                output_tokens=COALESCE(excluded.output_tokens,sessions.output_tokens),
                reasoning_output_tokens=COALESCE(excluded.reasoning_output_tokens,sessions.reasoning_output_tokens),
                total_tokens=COALESCE(excluded.total_tokens,sessions.total_tokens),
@@ -113,7 +117,8 @@ class Indexer:
             (session.session_id, session.source_file, session.started_at, session.ended_at,
              session.last_activity, session.cwd, session.project_key, session.model, session.cli_version,
              session.title, 0, usage.input_tokens, usage.cached_input_tokens, usage.output_tokens,
-             usage.reasoning_output_tokens, usage.total_tokens, usage.context_window),
+             usage.cache_write_input_tokens, usage.reasoning_output_tokens, usage.total_tokens,
+             usage.context_window),
         )
         event = item.event
         inserted = self.db.connection.execute(
@@ -150,9 +155,13 @@ class Indexer:
         if item.token_usage:
             u = item.token_usage
             self.db.connection.execute(
-                "INSERT OR IGNORE INTO token_snapshots VALUES(?,?,?,?,?,?,?,?,?)",
+                """INSERT OR IGNORE INTO token_snapshots(
+                   event_id,session_id,timestamp,input_tokens,cached_input_tokens,
+                   cache_write_input_tokens,output_tokens,reasoning_output_tokens,total_tokens,context_window)
+                   VALUES(?,?,?,?,?,?,?,?,?,?)""",
                 (event.event_id, session.session_id, event.timestamp, u.input_tokens, u.cached_input_tokens,
-                 u.output_tokens, u.reasoning_output_tokens, u.total_tokens, u.context_window),
+                 u.cache_write_input_tokens, u.output_tokens, u.reasoning_output_tokens,
+                 u.total_tokens, u.context_window),
             )
         for path, action, evidence in item.file_activity:
             self.db.connection.execute(
@@ -173,7 +182,16 @@ class Indexer:
             try:
                 # Codex task_complete ends a turn, not a resumable session. Recent
                 # append activity is the reliable V1 signal for session liveness.
-                active = Path(row["source_file"]).stat().st_mtime >= cutoff
+                if str(row["source_file"]).startswith("otel:"):
+                    timestamp = self.db.connection.execute(
+                        "SELECT MAX(timestamp) FROM telemetry_events WHERE session_id=?",
+                        (row["session_id"],),
+                    ).fetchone()[0]
+                    active = bool(timestamp and datetime.fromisoformat(
+                        timestamp.replace("Z", "+00:00")
+                    ).timestamp() >= cutoff)
+                else:
+                    active = Path(row["source_file"]).stat().st_mtime >= cutoff
             except OSError:
                 active = False
             if active:

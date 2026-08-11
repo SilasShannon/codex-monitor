@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import mimetypes
 import threading
 import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from ..analytics import cost_summary, session_costs
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
 from ..queries import overview, projects, session_detail, sessions
+from ..sources.otel import OtelReceiver
 
 INDEX_HTML = r'''<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
@@ -24,7 +28,8 @@ main{max-width:1300px;margin:32px auto;padding:0 24px}.cards{display:grid;grid-t
 <script>
 const app=document.querySelector('#app'); const esc=s=>String(s??'UNKNOWN / NOT EXPOSED').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>n==null?'UNKNOWN / NOT EXPOSED':Number(n).toLocaleString(); async function api(p){let r=await fetch(p);if(!r.ok)throw Error(r.status);return r.json()}
-async function showOverview(){let [o,s]=await Promise.all([api('/api/overview'),api('/api/sessions?limit=8')]);app.innerHTML=`<h2>Overview</h2><div class=cards>${[['Active sessions',o.active_sessions],['Sessions',o.sessions],['Tokens',o.total_tokens],['Tool calls',o.tool_calls],['MCP calls',o.mcp_calls],['Unsupported',o.unsupported_events]].map(x=>`<div class=card><span class=muted>${x[0]}</span><div class=value>${fmt(x[1])}</div></div>`).join('')}</div>${sessionTable(s)}`}
+const usd=n=>n==null?'UNAVAILABLE':'$'+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:4});
+async function showOverview(){let [o,c,s]=await Promise.all([api('/api/overview'),api('/api/cost/summary'),api('/api/sessions?limit=8')]);app.innerHTML=`<h2>Overview</h2><div class=cards>${[['Active sessions',o.active_sessions],['Tokens',o.total_tokens],['API equivalent today',usd(c.today)],['API equivalent · 7 days',usd(c['7_days'])],['API equivalent · 30 days',usd(c['30_days'])],['Cache rate',o.cache_rate==null?'UNAVAILABLE':Math.round(o.cache_rate*100)+'%'],['Estimated cache savings',usd(c.cache_savings)]].map(x=>`<div class=card><span class=muted>${x[0]}</span><div class=value>${x[1]}</div></div>`).join('')}</div><p class=muted>All monetary values are estimated API-equivalent cost, not actual subscription charges. ${fmt(c.unavailable_sessions)} sessions cannot be priced with current evidence.</p>${sessionTable(s)}`}
 function sessionTable(rows){return `<div class=panel><h3>Sessions</h3><table><thead><tr><th>Project</th><th>Session</th><th>Model</th><th>Last activity</th><th>Tokens</th></tr></thead><tbody>${rows.map(s=>`<tr><td>${esc(s.project_name)}</td><td><a href="#" onclick="showSession('${encodeURIComponent(s.session_id)}')">${esc(s.session_id.slice(0,16))}</a></td><td>${esc(s.model)}</td><td>${esc(s.last_activity)}</td><td>${fmt(s.total_tokens)}</td></tr>`).join('')}</tbody></table></div>`}
 async function showProjects(){let p=await api('/api/projects');app.innerHTML=`<h2>Projects</h2><div class=cards>${p.map(x=>`<div class=card><h3>${esc(x.name)}</h3><div class=muted>${esc(x.git_root||x.working_directory)}</div><p>${fmt(x.session_count)} sessions · ${fmt(x.total_tokens)} tokens</p></div>`).join('')}</div>`}
 async function showSessions(){app.innerHTML='<h2>Sessions</h2><input id=q placeholder="Search project, session, path, title"><div id=results></div>';let go=async()=>document.querySelector('#results').innerHTML=sessionTable(await api('/api/sessions?search='+encodeURIComponent(document.querySelector('#q').value)));document.querySelector('#q').oninput=go;go()}
@@ -59,17 +64,29 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if origin and origin.rstrip("/") != f"http://{self.headers.get('Host')}".rstrip("/"):
             return self._json({"error": "cross-origin request refused"}, HTTPStatus.FORBIDDEN)
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            body = INDEX_HTML.encode()
+        if parsed.path == "/" or parsed.path.startswith("/assets/"):
+            static_root = Path(__file__).with_name("static").resolve()
+            relative = "index.html" if parsed.path == "/" else parsed.path.lstrip("/")
+            target = (static_root / relative).resolve()
+            if static_root not in target.parents or not target.is_file():
+                return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+            body = target.read_bytes()
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            content_type = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("X-Frame-Options", "DENY")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; style-src 'self'")
             self.end_headers()
             self.wfile.write(body)
             return
         if parsed.path == "/api/overview":
             return self._json(overview(self.db))
+        if parsed.path == "/api/cost/summary":
+            return self._json(cost_summary(self.db))
+        if parsed.path == "/api/cost/sessions":
+            return self._json(session_costs(self.db))
         if parsed.path == "/api/projects":
             return self._json(projects(self.db))
         if parsed.path == "/api/sessions":
@@ -108,6 +125,10 @@ def serve(config: Config, db: Database, host: str, port: int, open_browser: bool
             refresh_db.close()
 
     Indexer(config, db).scan()
+    receiver = None
+    if config.otel_enabled:
+        receiver = OtelReceiver(config.database_path, config.otel_host, config.otel_port)
+        receiver.start()
     threading.Thread(target=refresh, daemon=True).start()
     server = ThreadingHTTPServer((host, port), DashboardHandler)
     url = f"http://{host}:{port}"
@@ -120,4 +141,6 @@ def serve(config: Config, db: Database, host: str, port: int, open_browser: bool
         pass
     finally:
         stop.set()
+        if receiver:
+            receiver.close()
         server.server_close()

@@ -173,6 +173,7 @@ class CodexEventParser:
             usage = info.get("total_token_usage") if isinstance(info.get("total_token_usage"), dict) else {}
             out.token_usage = TokenUsage(
                 usage.get("input_tokens"), usage.get("cached_input_tokens"),
+                usage.get("cache_write_input_tokens"),
                 usage.get("output_tokens"), usage.get("reasoning_output_tokens"),
                 usage.get("total_tokens"), info.get("model_context_window"),
             )

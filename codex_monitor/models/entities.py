@@ -8,6 +8,7 @@ from typing import Any
 class TokenUsage:
     input_tokens: int | None = None
     cached_input_tokens: int | None = None
+    cache_write_input_tokens: int | None = None
     output_tokens: int | None = None
     reasoning_output_tokens: int | None = None
     total_tokens: int | None = None

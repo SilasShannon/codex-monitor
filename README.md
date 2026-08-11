@@ -1,12 +1,14 @@
 # Codex Monitor
 
-Standalone, system-wide observability for OpenAI Codex. Install it once inside
-WSL2 and inspect sessions from any project without changing that project or
-feeding its logs back into Codex.
+Standalone, local-first observability and estimated API-equivalent cost
+analytics for OpenAI Codex. Install it once and inspect sessions from every
+project without changing monitored repositories or feeding logs back into an
+LLM.
 
-Milestone 1 discovers `~/.codex/sessions/**/rollout-*.jsonl`, incrementally
-normalizes records into a private SQLite cache, groups sessions by Git root or
-working directory, and provides a terminal monitor plus local web dashboard.
+Codex Monitor combines an opt-in loopback OpenTelemetry receiver with
+incremental historical discovery of `~/.codex/sessions/**/rollout-*.jsonl`.
+It normalizes records into a private SQLite cache and powers a React dashboard
+with real token, cache, project, session, and deterministic cost data.
 
 ## Install
 
@@ -16,6 +18,8 @@ Python 3.10+ is supported. `pipx` is recommended:
 git clone <your-repository-url> codex-monitor
 cd codex-monitor
 pipx install .
+codex-monitor setup
+codex-monitor web --open
 codex-monitor sessions
 ```
 
@@ -30,6 +34,7 @@ pytest
 
 ```bash
 codex-monitor                 # live terminal dashboard
+codex-monitor setup           # read-only environment discovery
 codex-monitor live
 codex-monitor sessions
 codex-monitor sessions --search project-name
@@ -46,32 +51,52 @@ The optional `xmon` alias invokes the same CLI.
 
 - Codex data roots and monitored projects are read-only inputs.
 - The cache defaults to `~/.cache/codex-monitor/monitor.db` with private modes.
-- No telemetry or network feature exists in Milestone 1.
+- OTel ingestion is loopback-only and disabled in Codex until the user opts in;
+  external forwarding is never configured automatically.
 - The web server binds to `127.0.0.1`, has no authentication, validates Host
   and Origin, and warns loudly before non-loopback binding.
 - Hidden/encrypted reasoning is not stored or displayed.
 - Unsupported raw events stay only in the local monitor cache for future
   parser compatibility.
 
-Token totals are shown only when Codex exposes them. Cost calculation is off;
-subscription charge and API-equivalent estimates are intentionally not mixed.
+Token totals are shown only when Codex exposes them. Subscription charges and
+API-equivalent estimates are intentionally not mixed.
 
 ## Configuration
 
 Optional global file: `~/.config/codex-monitor/config.toml`
 
 ```toml
-data_roots = ["~/.codex"]
-cache_directory = "~/.cache/codex-monitor"
-web_host = "127.0.0.1"
-web_port = 8787
-scan_interval = 2.0
-git_enabled = true
-cost_enabled = false
 theme = "system"
+
+[web]
+host = "127.0.0.1"
+port = 8787
+
+[otel]
+enabled = true
+host = "127.0.0.1"
+port = 4318
+
+[history]
+scan_interval = 2.0
+
+[cost]
+enabled = true
+
+[privacy]
+log_user_prompts = false
+
+[git]
+enabled = true
 ```
 
-See [architecture](docs/architecture.md), [event format](docs/codex-event-format.md),
+Cost values are always labeled **estimated API-equivalent cost**. They are not
+actual ChatGPT subscription charges. Unknown model pricing and incomplete token
+categories remain unavailable rather than using a guessed fallback.
+
+See [architecture](docs/architecture.md), [OpenTelemetry](docs/opentelemetry.md),
+[token accounting](docs/tokens.md), [cost calculations](docs/cost-calculations.md),
 [WSL2](docs/wsl.md), and [privacy/security](docs/privacy-security.md).
 
 ## Attribution
