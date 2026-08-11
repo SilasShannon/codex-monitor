@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+from .analytics import tool_analytics
 from .config import Config, load_config
 from .database import Database
 from .indexer import Indexer
@@ -41,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     session_cmd.add_argument("--search")
     session_cmd.add_argument("--limit", type=int, default=100)
     sub.add_parser("projects")
+    sub.add_parser("tools")
+    sub.add_parser("mcp")
     show = sub.add_parser("show")
     show.add_argument("session")
     reindex = sub.add_parser("reindex")
@@ -104,6 +107,20 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "projects":
             data = projects(db)
             _print_table(["PROJECT", "PATH", "SESSIONS", "TOKENS", "LAST ACTIVITY"], [[x["name"], x["git_root"] or x["working_directory"], x["session_count"], x["total_tokens"], x["last_activity"]] for x in data])
+        elif args.command in {"tools", "mcp"}:
+            data = tool_analytics(db, mcp_only=args.command == "mcp")
+            _print_table(
+                ["TOOL", "CALLS", "SUCCESS", "FAILED", "UNKNOWN", "AVG MS", "SESSIONS"],
+                [
+                    [
+                        f"{row['server']} / {row['name']}" if row["server"] else row["name"],
+                        row["calls"], row["successes"], row["failures"],
+                        row["unknown_outcomes"], row["average_duration_ms"], row["sessions"],
+                    ]
+                    for row in data["rows"]
+                ],
+            )
+            print(f"\n{data['evidence_note']}")
         elif args.command == "show":
             detail = session_detail(db, args.session)
             if not detail:

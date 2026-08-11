@@ -10,7 +10,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from ..analytics import cost_summary, session_costs, usage_breakdown, usage_timeseries
+from ..analytics import (
+    cost_summary,
+    session_costs,
+    tool_analytics,
+    usage_breakdown,
+    usage_timeseries,
+)
 from ..briefings import active_briefings, session_briefing
 from ..config import Config
 from ..database import Database
@@ -88,6 +94,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(cost_summary(self.db))
         if parsed.path == "/api/cost/sessions":
             return self._json(session_costs(self.db))
+        if parsed.path == "/api/tools":
+            return self._json(tool_analytics(self.db))
+        if parsed.path == "/api/mcp":
+            return self._json(tool_analytics(self.db, mcp_only=True))
         if parsed.path == "/api/analytics/timeseries":
             query = parse_qs(parsed.query)
             try:
