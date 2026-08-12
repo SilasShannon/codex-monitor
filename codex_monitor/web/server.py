@@ -23,6 +23,7 @@ from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
 from ..queries import overview, projects, session_detail, sessions
+from ..shell_learning import shell_lessons
 from ..sources.otel import OtelReceiver
 
 INDEX_HTML = r'''<!doctype html>
@@ -116,6 +117,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(tool_analytics(self.db))
         if parsed.path == "/api/mcp":
             return self._json(tool_analytics(self.db, mcp_only=True))
+        if parsed.path == "/api/shell/lessons":
+            query = parse_qs(parsed.query)
+            try:
+                limit = min(max(int(query.get("limit", [50])[0]), 1), 200)
+            except ValueError:
+                return self._json({"error": "invalid limit"}, HTTPStatus.BAD_REQUEST)
+            return self._json(shell_lessons(self.db, limit))
         if parsed.path == "/api/analytics/timeseries":
             query = parse_qs(parsed.query)
             try:
