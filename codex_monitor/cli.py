@@ -13,7 +13,7 @@ from .live import run as run_live
 from .platform import current_platform
 from .queries import projects, session_detail, sessions
 from .setup import configure_codex_otel
-from .web.server import serve
+from .web.server import ServerStartupError, serve
 
 
 def _print_table(headers: list[str], rows: list[list[object]]) -> None:
@@ -128,7 +128,11 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print(json.dumps(detail, indent=2, default=str))
         elif args.command == "web":
-            serve(config, db, args.host or config.web_host, args.port or config.web_port, args.open)
+            try:
+                serve(config, db, args.host or config.web_host, args.port or config.web_port, args.open)
+            except ServerStartupError as exc:
+                print(f"Codex Monitor could not start: {exc}", file=sys.stderr)
+                return 2
         return 0
     finally:
         db.close()
