@@ -5,12 +5,14 @@ import json
 import sys
 from pathlib import Path
 
+from .analytics import tool_analytics
 from .config import Config, load_config
 from .database import Database
 from .indexer import Indexer
 from .live import run as run_live
 from .platform import current_platform
 from .queries import projects, session_detail, sessions
+from .setup import configure_codex_otel
 from .web.server import serve
 
 
@@ -31,12 +33,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--database", type=Path)
     sub = parser.add_subparsers(dest="command")
-    sub.add_parser("setup")
+    setup = sub.add_parser("setup")
+    setup.add_argument("--configure-otel", action="store_true",
+                       help="append loopback OTel exporters to Codex config")
+    setup.add_argument("--yes", action="store_true", help="confirm Codex config modification")
     sub.add_parser("live").add_argument("--once", action="store_true")
     session_cmd = sub.add_parser("sessions")
     session_cmd.add_argument("--search")
     session_cmd.add_argument("--limit", type=int, default=100)
     sub.add_parser("projects")
+    sub.add_parser("tools")
+    sub.add_parser("mcp")
     show = sub.add_parser("show")
     show.add_argument("session")
     reindex = sub.add_parser("reindex")
@@ -72,7 +79,18 @@ def main(argv: list[str] | None = None) -> int:
             print("Codex Monitor Setup\n")
             for key, value in checks.items():
                 print(f"✓ {key.replace('_', ' ').title()}: {value}")
-            print("\nDiscovery is read-only. Codex configuration has not been modified.")
+            if args.configure_otel:
+                if not args.yes:
+                    print("\nPass --yes with --configure-otel after reviewing the endpoint.", file=sys.stderr)
+                    return 2
+                codex_config = info.codex_home / "config.toml"
+                endpoint = f"http://{config.otel_host}:{config.otel_port}/v1/logs"
+                result = configure_codex_otel(codex_config, endpoint)
+                print(f"\n{result.reason}: {result.config_path}")
+                if result.backup_path:
+                    print(f"Backup: {result.backup_path}")
+            else:
+                print("\nDiscovery is read-only. Codex configuration has not been modified.")
             return 0
         if args.command == "reindex":
             if not args.yes:
@@ -89,6 +107,20 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "projects":
             data = projects(db)
             _print_table(["PROJECT", "PATH", "SESSIONS", "TOKENS", "LAST ACTIVITY"], [[x["name"], x["git_root"] or x["working_directory"], x["session_count"], x["total_tokens"], x["last_activity"]] for x in data])
+        elif args.command in {"tools", "mcp"}:
+            data = tool_analytics(db, mcp_only=args.command == "mcp")
+            _print_table(
+                ["TOOL", "CALLS", "SUCCESS", "FAILED", "UNKNOWN", "AVG MS", "SESSIONS"],
+                [
+                    [
+                        f"{row['server']} / {row['name']}" if row["server"] else row["name"],
+                        row["calls"], row["successes"], row["failures"],
+                        row["unknown_outcomes"], row["average_duration_ms"], row["sessions"],
+                    ]
+                    for row in data["rows"]
+                ],
+            )
+            print(f"\n{data['evidence_note']}")
         elif args.command == "show":
             detail = session_detail(db, args.session)
             if not detail:

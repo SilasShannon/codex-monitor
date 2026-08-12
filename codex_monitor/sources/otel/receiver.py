@@ -8,7 +8,7 @@ from pathlib import Path
 
 from ...database import Database
 from ...sources.codex.events import safe_json
-from .parser import parse_otlp_logs
+from .parser import parse_otlp_logs, parse_otlp_metrics, parse_otlp_traces
 
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
 
@@ -27,7 +27,13 @@ class _Handler(BaseHTTPRequestHandler):
     database_path: Path
 
     def do_POST(self) -> None:
-        if self.path != "/v1/logs":
+        parsers = {
+            "/v1/logs": parse_otlp_logs,
+            "/v1/metrics": parse_otlp_metrics,
+            "/v1/traces": parse_otlp_traces,
+        }
+        parser = parsers.get(self.path)
+        if parser is None:
             self.send_error(HTTPStatus.NOT_FOUND)
             return
         try:
@@ -40,70 +46,31 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length))
-            records = parse_otlp_logs(payload)
+            records = parser(payload)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             self.send_error(HTTPStatus.BAD_REQUEST)
             return
         db = Database(self.database_path)
         try:
             with db.transaction():
-                for record in records:
-                    inserted = db.connection.execute(
-                        "INSERT OR IGNORE INTO telemetry_events VALUES(?,?,?,?,?,?,?,?)",
-                        (record.event_id, record.timestamp, record.name, record.severity,
-                         record.session_id, record.model, safe_json(record.attributes), "OTEL"),
-                    )
-                    kind = record.attributes.get("event.kind", record.attributes.get("kind"))
-                    if record.name == "codex.sse_event" and str(kind) == "response.completed":
-                        input_tokens = _token(record.attributes, "input_tokens", "input_token_count")
-                        cached_tokens = _token(record.attributes, "cached_input_tokens",
-                                               "cached_input_token_count", "cached_token_count")
-                        cache_write_tokens = _token(record.attributes, "cache_write_input_tokens",
-                                                    "cache_write_token_count")
-                        output_tokens = _token(record.attributes, "output_tokens", "output_token_count")
-                        reasoning_tokens = _token(record.attributes, "reasoning_output_tokens",
-                                                  "reasoning_token_count")
+                if self.path == "/v1/logs":
+                    self._store_logs(db, records)
+                elif self.path == "/v1/traces":
+                    for span in records:
                         db.connection.execute(
-                            """INSERT OR IGNORE INTO telemetry_token_usage VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                            (record.event_id, record.timestamp, record.session_id, record.model,
-                             input_tokens, cached_tokens, cache_write_tokens, output_tokens,
-                             reasoning_tokens,
-                             _token(record.attributes, "total_tokens", "total_token_count")),
+                            "INSERT OR IGNORE INTO telemetry_spans VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (span.span_id, span.trace_id, span.parent_span_id, span.name,
+                             span.start_time, span.end_time, span.status, span.session_id,
+                             span.model, safe_json(span.attributes), "OTEL"),
                         )
-                        if inserted.rowcount and record.session_id:
-                            total_tokens = ((input_tokens or 0) + (output_tokens or 0))
-                            db.connection.execute(
-                                """INSERT INTO sessions(
-                                   session_id,source_file,started_at,last_activity,model,active,
-                                   input_tokens,cached_input_tokens,cache_write_input_tokens,
-                                   output_tokens,reasoning_output_tokens,total_tokens,event_count)
-                                   VALUES(?,?,?,?,?,1,?,?,?,?,?,?,1)
-                                   ON CONFLICT(session_id) DO UPDATE SET
-                                   last_activity=excluded.last_activity,
-                                   model=COALESCE(excluded.model,sessions.model),active=1,
-                                   input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.input_tokens,0)+COALESCE(excluded.input_tokens,0)
-                                     ELSE sessions.input_tokens END,
-                                   cached_input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.cached_input_tokens,0)+COALESCE(excluded.cached_input_tokens,0)
-                                     ELSE sessions.cached_input_tokens END,
-                                   cache_write_input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.cache_write_input_tokens,0)+COALESCE(excluded.cache_write_input_tokens,0)
-                                     ELSE sessions.cache_write_input_tokens END,
-                                   output_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.output_tokens,0)+COALESCE(excluded.output_tokens,0)
-                                     ELSE sessions.output_tokens END,
-                                   reasoning_output_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.reasoning_output_tokens,0)+COALESCE(excluded.reasoning_output_tokens,0)
-                                     ELSE sessions.reasoning_output_tokens END,
-                                   total_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
-                                     THEN COALESCE(sessions.total_tokens,0)+COALESCE(excluded.total_tokens,0)
-                                     ELSE sessions.total_tokens END,
-                                   event_count=sessions.event_count+1""",
-                                (record.session_id, f"otel:{record.session_id}", record.timestamp,
-                                 record.timestamp, record.model, input_tokens, cached_tokens,
-                                 cache_write_tokens, output_tokens, reasoning_tokens, total_tokens),
-                            )
+                else:
+                    for point in records:
+                        db.connection.execute(
+                            "INSERT OR IGNORE INTO telemetry_metrics VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                            (point.point_id, point.timestamp, point.name, point.metric_type,
+                             point.value, point.count, point.sum, point.session_id, point.model,
+                             safe_json(point.attributes), "OTEL"),
+                        )
         finally:
             db.close()
         body = b"{}"
@@ -112,6 +79,67 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    @staticmethod
+    def _store_logs(db: Database, records: list) -> None:
+        for record in records:
+            inserted = db.connection.execute(
+                "INSERT OR IGNORE INTO telemetry_events VALUES(?,?,?,?,?,?,?,?)",
+                (record.event_id, record.timestamp, record.name, record.severity,
+                 record.session_id, record.model, safe_json(record.attributes), "OTEL"),
+            )
+            kind = record.attributes.get("event.kind", record.attributes.get("kind"))
+            if record.name != "codex.sse_event" or str(kind) != "response.completed":
+                continue
+            input_tokens = _token(record.attributes, "input_tokens", "input_token_count")
+            cached_tokens = _token(record.attributes, "cached_input_tokens",
+                                   "cached_input_token_count", "cached_token_count")
+            cache_write_tokens = _token(record.attributes, "cache_write_input_tokens",
+                                        "cache_write_token_count")
+            output_tokens = _token(record.attributes, "output_tokens", "output_token_count")
+            reasoning_tokens = _token(record.attributes, "reasoning_output_tokens",
+                                      "reasoning_token_count")
+            db.connection.execute(
+                "INSERT OR IGNORE INTO telemetry_token_usage VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (record.event_id, record.timestamp, record.session_id, record.model,
+                 input_tokens, cached_tokens, cache_write_tokens, output_tokens,
+                 reasoning_tokens, _token(record.attributes, "total_tokens", "total_token_count")),
+            )
+            if not inserted.rowcount or not record.session_id:
+                continue
+            total_tokens = (input_tokens or 0) + (output_tokens or 0)
+            db.connection.execute(
+                """INSERT INTO sessions(
+                   session_id,source_file,started_at,last_activity,model,active,
+                   input_tokens,cached_input_tokens,cache_write_input_tokens,
+                   output_tokens,reasoning_output_tokens,total_tokens,event_count)
+                   VALUES(?,?,?,?,?,1,?,?,?,?,?,?,1)
+                   ON CONFLICT(session_id) DO UPDATE SET
+                   last_activity=excluded.last_activity,
+                   model=COALESCE(excluded.model,sessions.model),active=1,
+                   input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.input_tokens,0)+COALESCE(excluded.input_tokens,0)
+                     ELSE sessions.input_tokens END,
+                   cached_input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.cached_input_tokens,0)+COALESCE(excluded.cached_input_tokens,0)
+                     ELSE sessions.cached_input_tokens END,
+                   cache_write_input_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.cache_write_input_tokens,0)+COALESCE(excluded.cache_write_input_tokens,0)
+                     ELSE sessions.cache_write_input_tokens END,
+                   output_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.output_tokens,0)+COALESCE(excluded.output_tokens,0)
+                     ELSE sessions.output_tokens END,
+                   reasoning_output_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.reasoning_output_tokens,0)+COALESCE(excluded.reasoning_output_tokens,0)
+                     ELSE sessions.reasoning_output_tokens END,
+                   total_tokens=CASE WHEN sessions.source_file LIKE 'otel:%'
+                     THEN COALESCE(sessions.total_tokens,0)+COALESCE(excluded.total_tokens,0)
+                     ELSE sessions.total_tokens END,
+                   event_count=sessions.event_count+1""",
+                (record.session_id, f"otel:{record.session_id}", record.timestamp,
+                 record.timestamp, record.model, input_tokens, cached_tokens,
+                 cache_write_tokens, output_tokens, reasoning_tokens, total_tokens),
+            )
 
     def log_message(self, format: str, *args: object) -> None:
         return

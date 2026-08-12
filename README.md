@@ -10,6 +10,13 @@ incremental historical discovery of `~/.codex/sessions/**/rollout-*.jsonl`.
 It normalizes records into a private SQLite cache and powers a React dashboard
 with real token, cache, project, session, and deterministic cost data.
 
+The current dashboard includes functional Overview, Live, Sessions, Tokens,
+Cost, Tools, and MCP views, 30-day charts, project/model/session breakdowns, cache
+economics, and explicit coverage indicators for sessions that cannot be
+priced reliably. Live session briefings translate observed activity into plain
+language and introduce relevant software-engineering concepts without exposing
+or inventing private model reasoning.
+
 ## Install
 
 Python 3.10+ is supported. `pipx` is recommended:
@@ -35,10 +42,13 @@ pytest
 ```bash
 codex-monitor                 # live terminal dashboard
 codex-monitor setup           # read-only environment discovery
+codex-monitor setup --configure-otel --yes  # backed-up, opt-in local OTel setup
 codex-monitor live
 codex-monitor sessions
 codex-monitor sessions --search project-name
 codex-monitor projects
+codex-monitor tools
+codex-monitor mcp
 codex-monitor show <full-session-id>
 codex-monitor reindex --yes   # rebuild only the derived monitor database
 codex-monitor web --open      # http://127.0.0.1:8787
@@ -56,6 +66,9 @@ The optional `xmon` alias invokes the same CLI.
 - The web server binds to `127.0.0.1`, has no authentication, validates Host
   and Origin, and warns loudly before non-loopback binding.
 - Hidden/encrypted reasoning is not stored or displayed.
+- Session briefings use only visible assistant messages and structured evidence
+  such as tool, command, test, and file events. They may be incomplete when
+  Codex has not emitted enough observable data.
 - Unsupported raw events stay only in the local monitor cache for future
   parser compatibility.
 
@@ -97,7 +110,9 @@ categories remain unavailable rather than using a guessed fallback.
 
 See [architecture](docs/architecture.md), [OpenTelemetry](docs/opentelemetry.md),
 [token accounting](docs/tokens.md), [cost calculations](docs/cost-calculations.md),
-[WSL2](docs/wsl.md), and [privacy/security](docs/privacy-security.md).
+[live monitoring](docs/live-monitoring.md), [tool and MCP analytics](docs/tool-mcp-analytics.md),
+[WSL2](docs/wsl.md), and
+[privacy/security](docs/privacy-security.md).
 
 ## Attribution
 

@@ -9,10 +9,12 @@ The official Codex documentation lists structured events including
 `codex.tool_result`. Completed response events include token counts. Raw prompt
 content remains redacted unless `otel.log_user_prompt` is explicitly enabled.
 
-Codex Monitor currently receives OTLP/HTTP JSON logs at:
+Codex Monitor receives OTLP/HTTP JSON logs, metrics, and traces at:
 
 ```text
 http://127.0.0.1:4318/v1/logs
+http://127.0.0.1:4318/v1/metrics
+http://127.0.0.1:4318/v1/traces
 ```
 
 Suggested Codex configuration (not written automatically):
@@ -22,10 +24,16 @@ Suggested Codex configuration (not written automatically):
 environment = "local"
 log_user_prompt = false
 exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/logs", protocol = "json" } }
+metrics_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/metrics", protocol = "json" } }
+trace_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/traces", protocol = "json" } }
 ```
 
 Codex configuration must be inspected and backed up before an approved setup
 flow merges this block. External forwarding remains opt-in.
+
+Gauge, sum, and histogram metric points are normalized into SQLite. Trace IDs,
+span IDs, parent relationships, timing, status, session, model, and sanitized
+attributes are retained. OTLP protobuf remains future work.
 
 ## Live verification on Codex CLI 0.147.0
 
@@ -48,5 +56,12 @@ turn, so Codex Monitor deduplicates event identities and aggregates each
 completed call. Unneeded `user.email` and `user.account_id` metadata is dropped
 before database insertion. The verification used CLI overrides and did not
 modify `~/.codex/config.toml`.
+
+A three-signal live test received 18 logs, 144 metric points, and 278 spans from
+one minimal turn. Observed metrics covered turn token usage, end-to-end and
+first-token latency, WebSocket traffic, tools, startup, SQLite, skills, and MCP
+timing. Observed spans covered the turn lifecycle, model streaming, tool routing,
+MCP initialization, hooks, and persistence. These names are treated as
+versioned observations rather than permanent API guarantees.
 
 Source: [official Codex advanced configuration](https://learn.chatgpt.com/docs/config-file/config-advanced#observability-and-telemetry).

@@ -46,3 +46,16 @@ def test_reasoning_content_is_not_normalized() -> None:
     parsed = parser.parse_line(json.dumps(raw).encode())
     assert parsed and parsed.event.data == {"summary_exposed": True}
     assert "private" not in json.dumps(parsed.event.data)
+
+
+def test_visible_assistant_message_is_normalized() -> None:
+    parser = CodexEventParser("assistant")
+    parser.session.session_id = "s"
+    raw = {"timestamp": "now", "type": "event_msg",
+           "payload": {"type": "item_completed", "item": {
+               "type": "AgentMessage", "phase": "final_answer",
+               "content": [{"type": "text", "text": "Tests now pass."}],
+           }}}
+    parsed = parser.parse_line(json.dumps(raw).encode())
+    assert parsed and parsed.assistant_message == "Tests now pass."
+    assert parsed.event.data["phase"] == "final_answer"

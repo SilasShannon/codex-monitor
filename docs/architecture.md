@@ -22,9 +22,9 @@ SQLite stores provenance and deduplicated event identities. Rollout ingestion
 tracks path, size, nanosecond mtime, byte offset, and an incomplete trailing
 record. Input files and monitored Git repositories are read-only.
 
-The current OTel receiver accepts OTLP/HTTP JSON at `127.0.0.1:4318/v1/logs`.
-OTLP protobuf, traces, and metrics are the next receiver increments. The web
-server and receiver never bind OTel publicly.
+The OTel receiver accepts OTLP/HTTP JSON logs, metrics, and traces on
+`127.0.0.1:4318`. OTLP protobuf is the next protocol increment. The web server
+and receiver never bind OTel publicly.
 
 ## Verified environment baseline
 
