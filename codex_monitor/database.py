@@ -86,6 +86,8 @@ class Database:
               kind TEXT NOT NULL, server TEXT, status TEXT, duration_ms REAL, arguments_json TEXT,
               PRIMARY KEY(call_id, session_id), FOREIGN KEY(session_id) REFERENCES sessions(session_id)
             );
+            CREATE INDEX IF NOT EXISTS tool_calls_session_time
+              ON tool_calls(session_id,timestamp);
             CREATE TABLE IF NOT EXISTS tool_results(
               call_id TEXT NOT NULL, session_id TEXT NOT NULL, timestamp TEXT, success INTEGER,
               duration_ms REAL, output_preview TEXT, PRIMARY KEY(call_id, session_id)
@@ -94,6 +96,8 @@ class Database:
               event_id TEXT NOT NULL, session_id TEXT NOT NULL, timestamp TEXT, path TEXT NOT NULL,
               action TEXT NOT NULL, evidence TEXT NOT NULL, PRIMARY KEY(event_id, path, action)
             );
+            CREATE INDEX IF NOT EXISTS file_activity_session_time
+              ON file_activity(session_id,timestamp);
             CREATE TABLE IF NOT EXISTS token_snapshots(
               event_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, timestamp TEXT, input_tokens INTEGER,
               cached_input_tokens INTEGER, cache_write_input_tokens INTEGER, output_tokens INTEGER,

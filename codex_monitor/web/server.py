@@ -17,7 +17,7 @@ from ..analytics import (
     usage_breakdown,
     usage_timeseries,
 )
-from ..briefings import active_briefings, session_briefing
+from ..briefings import active_briefings, recent_briefings, session_briefing
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
@@ -115,6 +115,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         if parsed.path == "/api/live/briefings":
             return self._json(active_briefings(self.db))
+        if parsed.path == "/api/explain":
+            query = parse_qs(parsed.query)
+            try:
+                limit = min(max(int(query.get("limit", [12])[0]), 1), 50)
+            except ValueError:
+                return self._json({"error": "invalid limit"}, HTTPStatus.BAD_REQUEST)
+            return self._json(recent_briefings(self.db, limit))
         briefing_prefix = "/api/sessions/briefing/"
         if parsed.path.startswith(briefing_prefix):
             session_id = unquote(parsed.path[len(briefing_prefix):])

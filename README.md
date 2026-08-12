@@ -10,8 +10,8 @@ incremental historical discovery of `~/.codex/sessions/**/rollout-*.jsonl`.
 It normalizes records into a private SQLite cache and powers a React dashboard
 with real token, cache, project, session, and deterministic cost data.
 
-The current dashboard includes functional Overview, Live, Sessions, Tokens,
-Cost, Tools, and MCP views, 30-day charts, project/model/session breakdowns, cache
+The current dashboard includes functional Overview, Live, Explain, Sessions,
+Tokens, Cost, Tools, and MCP views, 30-day charts, project/model/session breakdowns, cache
 economics, and explicit coverage indicators for sessions that cannot be
 priced reliably. Live session briefings translate observed activity into plain
 language and introduce relevant software-engineering concepts without exposing
@@ -111,7 +111,7 @@ categories remain unavailable rather than using a guessed fallback.
 See [architecture](docs/architecture.md), [OpenTelemetry](docs/opentelemetry.md),
 [token accounting](docs/tokens.md), [cost calculations](docs/cost-calculations.md),
 [live monitoring](docs/live-monitoring.md), [tool and MCP analytics](docs/tool-mcp-analytics.md),
-[WSL2](docs/wsl.md), and
+[session explanations](docs/session-explanations.md), [WSL2](docs/wsl.md), and
 [privacy/security](docs/privacy-security.md).
 
 ## Attribution

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 
-from codex_monitor.briefings import active_briefings, session_briefing
+from codex_monitor.briefings import active_briefings, recent_briefings, session_briefing
 from codex_monitor.indexer import Indexer
 
 
@@ -22,6 +22,9 @@ def test_session_briefing_uses_only_observed_evidence(config, db, codex_root) ->
     assert briefing["tests"][0]["command"] == "pytest"
     assert briefing["tests"][0]["success"] is True
     assert briefing["files"][0]["action"] == "created"
+    assert briefing["phase"] == "Verifying"
+    assert briefing["activity_story"][0] == "Current observed phase: Verifying."
+    assert "tests protect" in briefing["questions_to_ask"][1]
     assert any(item["name"] == "Automated testing" for item in briefing["concepts"])
     assert "hidden reasoning" in briefing["evidence_note"]
 
@@ -32,3 +35,11 @@ def test_active_briefings_returns_recent_sessions(config, db) -> None:
     results = active_briefings(db)
     assert len(results) == 1
     assert results[0]["session_id"] == "session-test-1"
+
+
+def test_recent_briefings_include_inactive_sessions(config, db) -> None:
+    Indexer(config, db).scan()
+    results = recent_briefings(db, 1)
+    assert len(results) == 1
+    assert results[0]["session_id"] == "session-test-1"
+    assert results[0]["phase"] == "Verifying"
