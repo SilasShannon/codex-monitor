@@ -11,7 +11,8 @@ It normalizes records into a private SQLite cache and powers a React dashboard
 with real token, cache, project, session, and deterministic cost data.
 
 The current dashboard includes functional Overview, Live, Explain, Shell,
-Sessions, Tokens, Cost, Tools, and MCP views, 30-day charts, project/model/session breakdowns, cache
+Projects, Sessions, Tokens, Cost, Tools, and MCP views, 30-day charts,
+project/model/session breakdowns, cache
 economics, and explicit coverage indicators for sessions that cannot be
 priced reliably. Live session briefings translate observed activity into plain
 language and introduce relevant software-engineering concepts without exposing
@@ -112,7 +113,7 @@ See [architecture](docs/architecture.md), [OpenTelemetry](docs/opentelemetry.md)
 [token accounting](docs/tokens.md), [cost calculations](docs/cost-calculations.md),
 [live monitoring](docs/live-monitoring.md), [tool and MCP analytics](docs/tool-mcp-analytics.md),
 [session explanations](docs/session-explanations.md), [shell learning](docs/shell-learning.md),
-[WSL2](docs/wsl.md), and
+[project overviews](docs/project-overviews.md), [WSL2](docs/wsl.md), and
 [privacy/security](docs/privacy-security.md).
 
 ## Attribution
