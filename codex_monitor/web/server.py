@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import ipaddress
 import json
 import mimetypes
@@ -43,6 +44,23 @@ async function showSessions(){app.innerHTML='<h2>Sessions</h2><input id=q placeh
 async function showSession(id){let s=await api('/api/sessions/'+id);app.innerHTML=`<h2>${esc(s.title||s.session_id)}</h2><div class=cards><div class=card><span class=muted>Project</span><div>${esc(s.project_name)}</div></div><div class=card><span class=muted>Model</span><div>${esc(s.model)}</div></div><div class=card><span class=muted>Tokens</span><div>${fmt(s.total_tokens)}</div></div></div><div class=panel><h3>Activity timeline</h3><table>${s.events.map(e=>`<tr><td>${esc(e.timestamp)}</td><td>${esc(e.category)} / ${esc(e.subtype)}</td></tr>`).join('')}</table></div>`}
 showOverview();setInterval(()=>{if(!location.hash)showOverview()},5000);
 </script></body></html>'''
+
+
+class ServerStartupError(RuntimeError):
+    """A user-actionable local server startup failure."""
+
+
+def _http_server(host: str, port: int, handler, label: str) -> ThreadingHTTPServer:
+    try:
+        return ThreadingHTTPServer((host, port), handler)
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            raise ServerStartupError(
+                f"{label} port {host}:{port} is already in use. "
+                "Codex Monitor may already be running; open http://127.0.0.1:8787 "
+                "or stop the existing process before starting another copy."
+            ) from None
+        raise
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -167,12 +185,24 @@ def serve(config: Config, db: Database, host: str, port: int, open_browser: bool
             refresh_db.close()
 
     Indexer(config, db).scan()
+    server = _http_server(host, port, DashboardHandler, "Dashboard")
     receiver = None
-    if config.otel_enabled:
-        receiver = OtelReceiver(config.database_path, config.otel_host, config.otel_port)
-        receiver.start()
+    try:
+        if config.otel_enabled:
+            try:
+                receiver = OtelReceiver(config.database_path, config.otel_host, config.otel_port)
+            except OSError as exc:
+                if exc.errno == errno.EADDRINUSE:
+                    raise ServerStartupError(
+                        f"Telemetry receiver port {config.otel_host}:{config.otel_port} is already in use. "
+                        "Codex Monitor may already be running, or another OTLP receiver owns the port."
+                    ) from None
+                raise
+            receiver.start()
+    except BaseException:
+        server.server_close()
+        raise
     threading.Thread(target=refresh, daemon=True).start()
-    server = ThreadingHTTPServer((host, port), DashboardHandler)
     url = f"http://{host}:{port}"
     print(f"Codex Monitor web dashboard: {url}")
     if open_browser:
