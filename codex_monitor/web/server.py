@@ -22,6 +22,7 @@ from ..briefings import active_briefings, recent_briefings, session_briefing
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
+from ..project_guides import project_guide
 from ..project_overviews import project_overviews
 from ..queries import overview, projects, session_detail, sessions
 from ..shell_learning import shell_lessons
@@ -165,6 +166,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             except ValueError:
                 return self._json({"error": "invalid limit"}, HTTPStatus.BAD_REQUEST)
             return self._json(project_overviews(self.db, limit))
+        guide_prefix = "/api/project-guides/"
+        if parsed.path.startswith(guide_prefix):
+            project_key = unquote(parsed.path[len(guide_prefix):])
+            if not project_key or len(project_key) > 100 or "/" in project_key:
+                return self._json({"error": "invalid project key"}, HTTPStatus.BAD_REQUEST)
+            guide = project_guide(self.db, project_key)
+            return self._json(guide or {"error": "not found"}, 200 if guide else 404)
         if parsed.path == "/api/sessions":
             query = parse_qs(parsed.query)
             try:
