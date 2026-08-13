@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from ..analytics import (
     cost_summary,
+    git_analytics,
     session_costs,
     tool_analytics,
     usage_breakdown,
@@ -25,6 +26,8 @@ from ..indexer import Indexer
 from ..project_guides import project_guide
 from ..project_overviews import project_overviews
 from ..queries import overview, projects, session_detail, sessions
+from ..search import search
+from ..settings import settings_summary
 from ..shell_learning import shell_lessons
 from ..sources.otel import OtelReceiver
 
@@ -68,6 +71,7 @@ def _http_server(host: str, port: int, handler, label: str) -> ThreadingHTTPServ
 
 class DashboardHandler(BaseHTTPRequestHandler):
     db: Database
+    config: Config
 
     def _json(self, value: object, status: int = 200) -> None:
         payload = json.dumps(value, default=str).encode()
@@ -119,6 +123,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(tool_analytics(self.db))
         if parsed.path == "/api/mcp":
             return self._json(tool_analytics(self.db, mcp_only=True))
+        if parsed.path == "/api/git":
+            return self._json(git_analytics(self.db))
+        if parsed.path == "/api/search":
+            query = parse_qs(parsed.query).get("q", [""])[0]
+            return self._json(search(self.db, query))
+        if parsed.path == "/api/settings":
+            return self._json(settings_summary(self.config, self.db))
         if parsed.path == "/api/shell/lessons":
             query = parse_qs(parsed.query)
             try:
@@ -171,7 +182,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             project_key = unquote(parsed.path[len(guide_prefix):])
             if not project_key or len(project_key) > 100 or "/" in project_key:
                 return self._json({"error": "invalid project key"}, HTTPStatus.BAD_REQUEST)
-            guide = project_guide(self.db, project_key)
+            guide = project_guide(
+                self.db, project_key, source_analysis=self.config.source_analysis_enabled
+            )
             return self._json(guide or {"error": "not found"}, 200 if guide else 404)
         if parsed.path == "/api/sessions":
             query = parse_qs(parsed.query)
@@ -197,6 +210,7 @@ def serve(config: Config, db: Database, host: str, port: int, open_browser: bool
     if host not in {"127.0.0.1", "localhost", "::1"}:
         print("WARNING: Codex session history is sensitive; this server has no authentication.")
     DashboardHandler.db = db
+    DashboardHandler.config = config
     stop = threading.Event()
 
     def refresh() -> None:

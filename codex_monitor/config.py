@@ -32,6 +32,7 @@ class Config:
     theme: str = "system"
     scan_interval: float = 2.0
     git_enabled: bool = True
+    source_analysis_enabled: bool = False
 
     @property
     def database_path(self) -> Path:
@@ -57,6 +58,7 @@ def load_config(path: Path | None = None) -> Config:
     cost = raw.get("cost", {})
     privacy = raw.get("privacy", {})
     git = raw.get("git", {})
+    project_guides = raw.get("project_guides", {})
     history = raw.get("history", {})
     cache = Path(raw.get("cache_directory", platform_info.monitor_cache)).expanduser()
     database = raw.get("database")
@@ -74,4 +76,5 @@ def load_config(path: Path | None = None) -> Config:
         theme=str(raw.get("theme", "system")),
         scan_interval=float(history.get("scan_interval", raw.get("scan_interval", 2.0))),
         git_enabled=bool(git.get("enabled", raw.get("git_enabled", True))),
+        source_analysis_enabled=bool(project_guides.get("source_analysis", False)),
     )

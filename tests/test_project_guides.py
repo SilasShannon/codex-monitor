@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from codex_monitor.project_guides import _inventory, project_guide
+from pathlib import Path
+
+from codex_monitor.project_guides import _declarations, _inventory, project_guide
 
 
 def test_project_guide_explains_structure_without_source_contents(db, tmp_path) -> None:
@@ -64,3 +66,34 @@ def test_bounded_inventory_is_deterministic(tmp_path, monkeypatch) -> None:
     assert files == [root.joinpath("A.py").relative_to(root), root.joinpath("middle.py").relative_to(root)]
     assert directories == ["Alpha", "zeta"]
     assert truncated
+
+
+def test_source_analysis_is_explicit_and_reports_declarations(db, tmp_path) -> None:
+    root = tmp_path / "outlined-app"
+    root.mkdir()
+    (root / "main.py").write_text("class App:\n    pass\n\ndef run():\n    return App()\n")
+    db.connection.execute(
+        "INSERT INTO projects VALUES(?,?,?,?)", ("outline-key", "outlined-app", str(root), str(root))
+    )
+
+    default_guide = project_guide(db, "outline-key")
+    outlined_guide = project_guide(db, "outline-key", source_analysis=True)
+
+    assert default_guide and not default_guide["source_analysis"]["enabled"]
+    assert default_guide["source_analysis"]["files"] == []
+    assert outlined_guide and outlined_guide["source_analysis"]["enabled"]
+    assert outlined_guide["source_analysis"]["files"] == [{
+        "path": "main.py",
+        "declarations": [{"name": "App", "kind": "class"}, {"name": "run", "kind": "function"}],
+    }]
+    assert "return App" not in str(outlined_guide)
+
+
+def test_source_outline_labels_exported_declarations() -> None:
+    declarations = _declarations(
+        Path("main.ts"), "export async function loadData() {}\nexport class App {}\n"
+    )
+    assert declarations == [
+        {"name": "loadData", "kind": "async function"},
+        {"name": "App", "kind": "class"},
+    ]

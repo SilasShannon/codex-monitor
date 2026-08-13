@@ -11,6 +11,48 @@ from ...sources.codex.events import safe_json
 from .parser import parse_otlp_logs, parse_otlp_metrics, parse_otlp_traces
 
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
+PROTOBUF_CONTENT_TYPES = {"application/x-protobuf", "application/protobuf"}
+
+
+def _protobuf_types(path: str):
+    if path == "/v1/logs":
+        from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
+            ExportLogsServiceRequest,
+            ExportLogsServiceResponse,
+        )
+
+        return ExportLogsServiceRequest, ExportLogsServiceResponse
+    if path == "/v1/metrics":
+        from opentelemetry.proto.collector.metrics.v1.metrics_service_pb2 import (
+            ExportMetricsServiceRequest,
+            ExportMetricsServiceResponse,
+        )
+
+        return ExportMetricsServiceRequest, ExportMetricsServiceResponse
+    from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
+        ExportTraceServiceRequest,
+        ExportTraceServiceResponse,
+    )
+
+    return ExportTraceServiceRequest, ExportTraceServiceResponse
+
+
+def _decode_payload(path: str, content_type: str, body: bytes) -> tuple[dict, bytes, str]:
+    media_type = content_type.partition(";")[0].strip().lower()
+    if media_type in PROTOBUF_CONTENT_TYPES:
+        from google.protobuf.json_format import MessageToDict
+        from google.protobuf.message import DecodeError
+
+        request_type, response_type = _protobuf_types(path)
+        message = request_type()
+        try:
+            message.ParseFromString(body)
+        except DecodeError as exc:
+            raise ValueError("invalid OTLP protobuf payload") from exc
+        return MessageToDict(message), response_type().SerializeToString(), "application/x-protobuf"
+    if media_type in {"", "application/json"}:
+        return json.loads(body), b"{}", "application/json"
+    raise LookupError(media_type)
 
 
 def _token(attributes: dict, *names: str) -> int | None:
@@ -45,8 +87,13 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
             return
         try:
-            payload = json.loads(self.rfile.read(length))
+            payload, response_body, response_type = _decode_payload(
+                self.path, self.headers.get("Content-Type", ""), self.rfile.read(length)
+            )
             records = parser(payload)
+        except LookupError:
+            self.send_error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+            return
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             self.send_error(HTTPStatus.BAD_REQUEST)
             return
@@ -73,12 +120,11 @@ class _Handler(BaseHTTPRequestHandler):
                         )
         finally:
             db.close()
-        body = b"{}"
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Content-Type", response_type)
+        self.send_header("Content-Length", str(len(response_body)))
         self.end_headers()
-        self.wfile.write(body)
+        self.wfile.write(response_body)
 
     @staticmethod
     def _store_logs(db: Database, records: list) -> None:

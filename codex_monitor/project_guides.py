@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import ast
 import os
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -26,9 +28,16 @@ _EXTENSIONS = {
     ".js": "JavaScript", ".jsx": "React / JavaScript", ".rs": "Rust",
     ".go": "Go", ".sql": "SQL", ".sh": "Shell scripting", ".ps1": "PowerShell",
 }
+_SOURCE_EXTENSIONS = {".py", ".ts", ".tsx", ".js", ".jsx", ".rs", ".go"}
+_DECLARATION = re.compile(
+    r"^\s*(?:export\s+)?(?P<async>async\s+)?"
+    r"(?P<kind>function|class|interface|type|const|struct|enum|trait)\s+"
+    r"(?P<name>[A-Za-z_$][\w$]*)",
+    re.MULTILINE,
+)
 
 
-def project_guide(db: Database, project_key: str) -> dict | None:
+def project_guide(db: Database, project_key: str, *, source_analysis: bool = False) -> dict | None:
     row = db.connection.execute(
         "SELECT * FROM projects WHERE project_key=?", (project_key,)
     ).fetchone()
@@ -45,6 +54,7 @@ def project_guide(db: Database, project_key: str) -> dict | None:
     areas = _areas(directories, files)
     main_files = [_explain_file(path) for path in _important(files)[:18]]
     concepts = _concepts(technologies, areas, files)
+    source_outline = _source_outline(root, files) if source_analysis else []
     return {
         "project_key": project_key,
         "name": row["name"],
@@ -57,13 +67,62 @@ def project_guide(db: Database, project_key: str) -> dict | None:
         "concepts": concepts,
         "connections": _connections(areas),
         "learning_path": _learning_path(technologies, concepts),
+        "source_analysis": {
+            "enabled": source_analysis,
+            "files": source_outline,
+            "files_read": len(source_outline),
+        },
         "inventory": {"files_seen": len(files), "directories_seen": len(directories),
                       "truncated": truncated},
         "evidence_note": (
-            "This deterministic guide inspects names and structure only, with a bounded read-only scan. "
-            "It does not read source contents, execute project code, infer hidden intent, or prove behavior."
+            ("This deterministic guide performs a bounded read-only source outline. "
+             if source_analysis else
+             "This deterministic guide inspects names and structure only, with a bounded read-only scan. ")
+            + ("It reports declarations without executing code, inferring hidden intent, or proving behavior."
+               if source_analysis else
+               "It does not read source contents, execute project code, infer hidden intent, or prove behavior.")
         ),
     }
+
+
+def _source_outline(root: Path, files: list[Path], max_files: int = 12,
+                    max_file_bytes: int = 32 * 1024, max_total_bytes: int = 256 * 1024) -> list[dict]:
+    result = []
+    total = 0
+    candidates = [path for path in _important(files) if path.suffix.lower() in _SOURCE_EXTENSIONS]
+    for relative in candidates:
+        if len(result) >= max_files or total >= max_total_bytes:
+            break
+        target = root / relative
+        try:
+            size = target.stat().st_size
+            if size > max_file_bytes or size > max_total_bytes - total or target.is_symlink():
+                continue
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        total += size
+        declarations = _declarations(relative, text)[:24]
+        result.append({"path": str(relative), "declarations": declarations})
+    return result
+
+
+def _declarations(path: Path, text: str) -> list[dict[str, str]]:
+    if path.suffix.lower() == ".py":
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        kinds = {ast.ClassDef: "class", ast.FunctionDef: "function", ast.AsyncFunctionDef: "async function"}
+        return [
+            {"name": node.name, "kind": kind}
+            for node in tree.body for node_type, kind in kinds.items() if isinstance(node, node_type)
+        ]
+    return [{
+        "name": match.group("name"),
+        "kind": f"async {match.group('kind')}" if match.group("async") else match.group("kind"),
+    }
+            for match in _DECLARATION.finditer(text)]
 
 
 def _inventory(root: Path, max_files: int = 600, max_depth: int = 4):

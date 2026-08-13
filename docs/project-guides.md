@@ -23,8 +23,17 @@ path through the API.
 This boundary makes the guide fast and privacy-conscious, but limits certainty.
 A filename such as `server.py` suggests a conventional responsibility; it does
 not prove the file behaves that way. Exact control flow, domain behavior, and
-runtime guarantees require a future opt-in source-analysis layer with explicit
-privacy controls. Unknown connections are labeled instead of invented.
+runtime guarantees require source-level evidence. Unknown connections are
+labeled instead of invented.
+
+## Optional source outline
+
+Set `project_guides.source_analysis = true` in Codex Monitor's own configuration
+to add a bounded declaration outline. This opt-in reads at most 12 recognized
+source files, 32 KiB per file and 256 KiB total. It reports top-level class,
+function, and similar declaration names; it does not return source excerpts.
+Files are decoded as UTF-8, symbolic links and oversized files are skipped, and
+project code is never imported or executed.
 
 All inspection and explanation remain local. Project files are read-only inputs,
 no project code is executed, and no information is sent to an external AI or
