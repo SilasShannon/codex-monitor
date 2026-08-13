@@ -17,6 +17,7 @@ type ShellData = {summary:{commands:number;projects:number;categories:number;fai
 type ProjectOverview = {project_key:string;name:string;path:string;sessions:number;active_sessions:number;last_activity?:string;total_tokens:number;cache_rate:number|null;estimated_api_equivalent_cost:string;priced_sessions:number;unpriced_sessions:number;tool_calls:number;test_commands:number;failed_tools:number;files_touched:number;file_actions:Record<string,number>;top_tools:{name:string;calls:number}[];models:{name:string;sessions:number}[];highlights:string[];evidence_note:string}
 type ProjectGuide = {project_key:string;name:string;path:string;available:boolean;reason?:string;rundown?:string;technologies?:{name:string;evidence:string;explanation:string}[];areas?:{name:string;explanation:string}[];main_files?:{path:string;explanation:string}[];concepts?:{name:string;explanation:string}[];connections?:string[];learning_path?:string[];inventory?:{files_seen:number;directories_seen:number;truncated:boolean};evidence_note?:string}
 type Data = {overview:Overview;cost:Cost;sessions:Session[];briefings:Briefing[];explanations:Briefing[];shell:ShellData;projectOverviews:ProjectOverview[];tools:ActivityData;mcp:ActivityData;series:Point[];projects:Breakdown[];models:Breakdown[];costProjects:Breakdown[];costModels:Breakdown[];costSessions:Breakdown[]}
+type AnalyticsDays = 1|7|30|90
 const Charts = React.lazy(()=>import('./charts'))
 
 const nav = [
@@ -25,31 +26,32 @@ const nav = [
   ['MCP', Boxes], ['Git', FolderGit2], ['Search', Search], ['Settings', Settings],
 ] as const
 const ready = new Set(['Overview','Live','Explain','Shell','Projects','Sessions','Tokens','Cost','Tools','MCP'])
+const analyticsRanges:{days:AnalyticsDays;label:string}[] = [{days:1,label:'1D'},{days:7,label:'7D'},{days:30,label:'30D'},{days:90,label:'90D'}]
 const compact = (value?:number) => value==null?'Unavailable':Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value)
 const usd = (value?:string|number) => value==null?'Unavailable':Number(value).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2})
 const api = async <T,>(path:string):Promise<T> => {const response=await fetch(path);if(!response.ok)throw Error(`${response.status}`);return response.json()}
 
 function App(){
-  const [page,setPage]=React.useState<Page>('Overview'); const [data,setData]=React.useState<Data|null>(null); const [error,setError]=React.useState('')
+  const [page,setPage]=React.useState<Page>('Overview'); const [analyticsDays,setAnalyticsDays]=React.useState<AnalyticsDays>(30); const [data,setData]=React.useState<Data|null>(null); const [error,setError]=React.useState('')
   React.useEffect(()=>{const loadAll=()=>Promise.all([
     api<Overview>('/api/overview'),api<Cost>('/api/cost/summary'),api<Session[]>('/api/sessions?limit=8'),
     api<Briefing[]>('/api/live/briefings'),api<Briefing[]>('/api/explain?limit=12'),api<ShellData>('/api/shell/lessons?limit=50'),api<ProjectOverview[]>('/api/project-overviews'),api<ActivityData>('/api/tools'),api<ActivityData>('/api/mcp'),
-    api<Point[]>('/api/analytics/timeseries?days=30'),api<Breakdown[]>('/api/analytics/breakdown?dimension=project'),
+    api<Point[]>(`/api/analytics/timeseries?days=${analyticsDays}`),api<Breakdown[]>('/api/analytics/breakdown?dimension=project'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=model'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=project&sort=cost'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=model&sort=cost'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=session&sort=cost'),
   ]).then(([overview,cost,sessions,briefings,explanations,shell,projectOverviews,tools,mcp,series,projects,models,costProjects,costModels,costSessions])=>{setData({overview,cost,sessions,briefings,explanations,shell,projectOverviews,tools,mcp,series,projects,models,costProjects,costModels,costSessions});setError('')}).catch(()=>setError('The local analytics API is unavailable.'))
     const loadLive=()=>Promise.all([api<Overview>('/api/overview'),api<Cost>('/api/cost/summary'),api<Session[]>('/api/sessions?limit=8'),api<Briefing[]>('/api/live/briefings'),api<Briefing[]>('/api/explain?limit=12'),api<ActivityData>('/api/tools'),api<ActivityData>('/api/mcp')]).then(([overview,cost,sessions,briefings,explanations,tools,mcp])=>{setData(current=>current?{...current,overview,cost,sessions,briefings,explanations,tools,mcp}:current);setError('')}).catch(()=>setError('The local analytics API is unavailable.'))
-    loadAll();const liveTimer=window.setInterval(loadLive,5000);const analyticsTimer=window.setInterval(loadAll,60000);return()=>{window.clearInterval(liveTimer);window.clearInterval(analyticsTimer)}},[])
+    loadAll();const liveTimer=window.setInterval(loadLive,5000);const analyticsTimer=window.setInterval(loadAll,60000);return()=>{window.clearInterval(liveTimer);window.clearInterval(analyticsTimer)}},[analyticsDays])
   return <div className="shell"><aside><div className="brand"><span className="brandmark">C</span><div>Codex Monitor<small>Local observability</small></div></div>
     <nav>{nav.map(([label,Icon])=><button className={page===label?'active':''} key={label} onClick={()=>ready.has(label)&&setPage(label as Page)}><Icon size={17}/><span>{label}</span>{!ready.has(label)&&<em>Soon</em>}</button>)}</nav>
     <div className="local"><span/><div>Local only<small>127.0.0.1</small></div></div></aside>
-    <main><header><div><p className="eyebrow">Workspace analytics</p><h1>{page}</h1></div><div className="range">Last 30 days</div></header>
-      {error&&<div className="notice">{error}</div>}{!data?<Loading/>:page==='Overview'?<OverviewPage data={data}/>:page==='Live'?<LivePage data={data}/>:page==='Explain'?<ExplainPage data={data}/>:page==='Shell'?<ShellPage data={data.shell}/>:page==='Projects'?<ProjectsPage projects={data.projectOverviews}/>:page==='Sessions'?<SessionsPage data={data}/>:page==='Tokens'?<TokensPage data={data}/>:page==='Cost'?<CostPage data={data}/>:page==='Tools'?<ActivityPage data={data.tools}/>:<ActivityPage data={data.mcp}/>}</main></div>
+    <main><header><div><p className="eyebrow">Workspace analytics</p><h1>{page}</h1></div><div className="range-control"><span>Chart range</span><div className="range" role="group" aria-label="Analytics chart range">{analyticsRanges.map(option=><button className={analyticsDays===option.days?'active':''} aria-pressed={analyticsDays===option.days} onClick={()=>setAnalyticsDays(option.days)} key={option.days}>{option.label}</button>)}</div></div></header>
+      {error&&<div className="notice">{error}</div>}{!data?<Loading/>:page==='Overview'?<OverviewPage data={data} days={analyticsDays}/>:page==='Live'?<LivePage data={data}/>:page==='Explain'?<ExplainPage data={data}/>:page==='Shell'?<ShellPage data={data.shell}/>:page==='Projects'?<ProjectsPage projects={data.projectOverviews}/>:page==='Sessions'?<SessionsPage data={data}/>:page==='Tokens'?<TokensPage data={data} days={analyticsDays}/>:page==='Cost'?<CostPage data={data} days={analyticsDays}/>:page==='Tools'?<ActivityPage data={data.tools}/>:<ActivityPage data={data.mcp}/>}</main></div>
 }
 
-function OverviewPage({data}:{data:Data}){return <><section className="hero-grid">
+function OverviewPage({data,days}:{data:Data;days:AnalyticsDays}){return <><section className="hero-grid">
   <Metric label="Active sessions" value={String(data.overview.active_sessions)} tone="green" hint={`${data.overview.sessions} indexed`}/>
   <Metric label="Tokens today" value={compact(data.series.at(-1)?.total_tokens)} hint="Inclusive input + output"/>
   <Metric label="API equivalent today" value={usd(data.cost.today)} tone="violet" hint="Estimate · not a charge"/>
@@ -57,21 +59,21 @@ function OverviewPage({data}:{data:Data}){return <><section className="hero-grid
   <Metric label="30-day estimate" value={usd(data.cost['30_days'])} hint="Verified pricing only"/>
   <Metric label="Cache rate" value={data.overview.cache_rate==null?'Unavailable':`${Math.round(data.overview.cache_rate*100)}%`} tone="cyan" hint="Cached / inclusive input"/>
   <Metric label="Cache savings" value={usd(data.cost.cache_savings)} tone="green" hint="Estimated counterfactual"/>
-  </section><section className="split"><ChartPanel title="Token usage over time"><TokenChart data={data.series}/></ChartPanel><Evidence data={data}/></section><SessionTable rows={data.sessions}/><BreakdownTable title="Recent projects" rows={data.projects} metric="tokens"/></>}
+  </section><section className="split"><ChartPanel title="Token usage over time" days={days}><TokenChart data={data.series}/></ChartPanel><Evidence data={data}/></section><SessionTable rows={data.sessions}/><BreakdownTable title="Recent projects" rows={data.projects} metric="tokens"/></>}
 
-function TokensPage({data}:{data:Data}){return <><section className="hero-grid token-cards">
+function TokensPage({data,days}:{data:Data;days:AnalyticsDays}){return <><section className="hero-grid token-cards">
   <Metric label="Inclusive input" value={compact(data.overview.input_tokens)} hint="Fresh + cached + cache writes"/>
   <Metric label="Cached input" value={compact(data.overview.cached_input_tokens)} tone="cyan" hint="Discounted cache reads"/>
   <Metric label="Cache writes" value={compact(data.overview.cache_write_input_tokens)} hint="Explicit cache creation"/>
   <Metric label="Output" value={compact(data.overview.output_tokens)} tone="violet" hint="Includes visible and reasoning output"/>
-  </section><ChartPanel title="Fresh, cached, and output tokens"><TokenChart data={data.series}/></ChartPanel><BreakdownTable title="Tokens by project" rows={data.projects} metric="tokens"/></>}
+  </section><ChartPanel title="Fresh, cached, and output tokens" days={days}><TokenChart data={data.series}/></ChartPanel><BreakdownTable title="Tokens by project" rows={data.projects} metric="tokens"/></>}
 
-function CostPage({data}:{data:Data}){return <><section className="hero-grid">
+function CostPage({data,days}:{data:Data;days:AnalyticsDays}){return <><section className="hero-grid">
   <Metric label="Today" value={usd(data.cost.today)} tone="violet" hint="Estimated API-equivalent"/>
   <Metric label="7 days" value={usd(data.cost['7_days'])} hint="Estimated API-equivalent"/>
   <Metric label="30 days" value={usd(data.cost['30_days'])} hint="Estimated API-equivalent"/>
   <Metric label="Cache savings" value={usd(data.cost.cache_savings)} tone="green" hint="Estimated counterfactual"/>
-  </section><section className="split"><ChartPanel title="Estimated cost over time"><CostChart data={data.series}/></ChartPanel><BreakdownTable title="Cost by model" rows={data.costModels} metric="cost"/></section><BreakdownTable title="Cost by project" rows={data.costProjects} metric="cost"/><BreakdownTable title="Highest-cost sessions" rows={data.costSessions} metric="cost"/></>}
+  </section><section className="split"><ChartPanel title="Estimated cost over time" days={days}><CostChart data={data.series}/></ChartPanel><BreakdownTable title="Cost by model" rows={data.costModels} metric="cost"/></section><BreakdownTable title="Cost by project" rows={data.costProjects} metric="cost"/><BreakdownTable title="Highest-cost sessions" rows={data.costSessions} metric="cost"/></>}
 
 function LivePage({data}:{data:Data}){return <>{data.briefings.length===0?<section className="panel empty"><Activity size={24}/><h2>No reliably active sessions</h2><p>Start Codex activity or configure local OTel. This view refreshes every five seconds.</p></section>:<section className="briefing-grid">{data.briefings.map(briefing=><BriefingCard briefing={briefing} key={briefing.session_id}/>)}</section>}</>}
 function ExplainPage({data}:{data:Data}){return <><section className="panel explain-intro"><BookOpen size={22}/><div><p className="eyebrow">Developer learning view</p><h2>Understand what Codex is doing</h2><p>This page translates observable session activity into a plain-language development story. It explains evidence and concepts, not private reasoning.</p></div></section>{data.explanations.length===0?<section className="panel empty"><h2>No sessions to explain yet</h2><p>Once Codex emits session activity, educational summaries will appear here.</p></section>:<section className="briefing-grid explain-grid">{data.explanations.map(briefing=><BriefingCard briefing={briefing} educational key={briefing.session_id}/>)}</section>}</>}
@@ -97,7 +99,7 @@ function ActivityTable({data}:{data:ActivityData}){return <section className="pa
 
 function TokenChart({data}:{data:Point[]}){return <React.Suspense fallback={<div className="chart-loading"/>}><Charts kind="tokens" data={data}/></React.Suspense>}
 function CostChart({data}:{data:Point[]}){return <React.Suspense fallback={<div className="chart-loading"/>}><Charts kind="cost" data={data}/></React.Suspense>}
-function ChartPanel({title,children}:{title:string;children:React.ReactNode}){return <section className="panel chart"><div className="panelhead"><div><p className="eyebrow">30-day window</p><h2>{title}</h2></div></div>{children}</section>}
+function ChartPanel({title,days,children}:{title:string;days:AnalyticsDays;children:React.ReactNode}){return <section className="panel chart"><div className="panelhead"><div><p className="eyebrow">{days}-day window</p><h2>{title}</h2></div></div>{children}</section>}
 function Metric({label,value,hint,tone=''}:{label:string;value:string;hint:string;tone?:string}){return <article className={`metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{hint}</small></article>}
 function Evidence({data}:{data:Data}){return <section className="panel posture"><p className="eyebrow">Data posture</p><h2>Evidence, not guesses</h2><div className="ring"><div><b>{data.overview.sessions-data.cost.unavailable_sessions}</b><span>priced sessions</span></div></div><ul><li><i className="ok"/>Exact token snapshots</li><li><i className="ok"/>Official model pricing</li><li><i/>Historical prices pending</li></ul><p className="footnote">Every monetary value is an estimated API-equivalent cost, never an actual subscription charge.</p></section>}
 function SessionTable({rows}:{rows:Session[]}){return <section className="panel standalone"><div className="panelhead"><div><p className="eyebrow">Recent activity</p><h2>Sessions</h2></div></div><div className="table"><div className="tr th"><span>Project</span><span>Model</span><span>Tokens</span><span>Last activity</span></div>{rows.map(s=><div className="tr" key={s.session_id}><span><b>{s.project_name||'Unassigned'}</b><small>{s.session_id.slice(0,12)}</small></span><span className="pill">{s.model||'Unknown'}</span><span>{compact(s.total_tokens)}</span><span>{s.last_activity?new Date(s.last_activity).toLocaleString():'Unknown'}</span></div>)}</div></section>}

@@ -9,7 +9,9 @@ from codex_monitor.queries import overview, projects, session_detail, sessions
 
 def test_queries_and_search(config, db) -> None:
     Indexer(replace(config, log_user_prompts=True), db).scan()
-    assert overview(db)["sessions"] == 1
+    summary = overview(db)
+    assert summary["sessions"] == 1
+    assert summary["cache_rate"] == 0.4
     assert projects(db)[0]["name"] == "example-project"
     assert sessions(db, search="safe parser")[0]["session_id"] == "session-test-1"
     detail = session_detail(db, "session-test-1")

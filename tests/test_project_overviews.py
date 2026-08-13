@@ -15,6 +15,7 @@ def test_project_overview_uses_observed_evidence(config, db) -> None:
     assert project["test_commands"] == 1
     assert project["files_touched"] == 1
     assert project["unpriced_sessions"] == 1
+    assert project["cache_rate"] == 0.4
     assert any("verification work" in item for item in project["highlights"])
     assert "not unobserved project goals" in project["evidence_note"]
 

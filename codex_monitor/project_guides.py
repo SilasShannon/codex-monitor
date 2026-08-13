@@ -79,6 +79,8 @@ def _inventory(root: Path, max_files: int = 600, max_depth: int = 4):
             if name.lower() not in _SKIP and depth < max_depth
             and not (current_path / name).is_symlink()
         ]
+        child_dirs.sort(key=str.casefold)
+        child_files.sort(key=str.casefold)
         for directory in child_dirs:
             relative = (current_path / directory).relative_to(root)
             if relative.parts:

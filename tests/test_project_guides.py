@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from codex_monitor.project_guides import project_guide
+from codex_monitor.project_guides import _inventory, project_guide
 
 
 def test_project_guide_explains_structure_without_source_contents(db, tmp_path) -> None:
@@ -51,3 +51,16 @@ def test_project_guide_prunes_dependencies_and_symlinks(db, tmp_path) -> None:
     serialized = str(guide)
     assert "private-package" not in serialized
     assert not any(item["path"].startswith("outside") for item in guide["main_files"])
+
+
+def test_bounded_inventory_is_deterministic(tmp_path, monkeypatch) -> None:
+    root = tmp_path / "ordered-app"
+    root.mkdir()
+    walk_result = [(str(root), ["zeta", "Alpha"], ["z.py", "A.py", "middle.py"])]
+    monkeypatch.setattr("codex_monitor.project_guides.os.walk", lambda *args, **kwargs: walk_result)
+
+    files, directories, truncated = _inventory(root, max_files=2)
+
+    assert files == [root.joinpath("A.py").relative_to(root), root.joinpath("middle.py").relative_to(root)]
+    assert directories == ["Alpha", "zeta"]
+    assert truncated

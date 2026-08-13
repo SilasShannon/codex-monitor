@@ -61,6 +61,7 @@ def overview(db: Database) -> dict:
     mcp = db.connection.execute("SELECT COUNT(*) count FROM tool_calls WHERE kind='mcp'").fetchone()[0]
     unsupported = db.connection.execute("SELECT COUNT(*) count FROM unsupported_events").fetchone()[0]
     result = dict(totals)
-    denominator = result["input_tokens"] + result["cached_input_tokens"]
+    # Cached input is a subset of input_tokens, not an additional token category.
+    denominator = result["input_tokens"]
     result["cache_rate"] = result["cached_input_tokens"] / denominator if denominator else None
     return {**result, "tool_calls": tools, "mcp_calls": mcp, "unsupported_events": unsupported}

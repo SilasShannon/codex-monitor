@@ -14,8 +14,10 @@ the indexer. Never expose hidden/encrypted reasoning. Do not infer unsupported
 token, context, cost, file, process, or activity metrics.
 
 Incremental parsing owns `(path, size, mtime_ns, byte offset, partial tail)` in
-`source_files`. Keep Codex input read-only and cache output private. All Git
-commands must be read-only. Web defaults to loopback and has no authentication.
+`source_files`. Keep Codex input read-only and cache output private. Git state in
+monitored repositories must remain read-only; Git writes in Codex Monitor itself
+are allowed only when the user explicitly authorizes development or publishing.
+Web defaults to loopback and has no authentication.
 
 Run `PYTHONPATH=. pytest` before committing. Fixtures must be synthetic or
 sanitized; never commit real session history.

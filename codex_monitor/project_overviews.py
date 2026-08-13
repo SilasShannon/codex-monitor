@@ -14,6 +14,7 @@ def project_overviews(db: Database, limit: int = 50) -> list[dict]:
         """SELECT p.*,COUNT(s.session_id) sessions,COALESCE(SUM(s.active),0) active_sessions,
                   MAX(COALESCE(s.last_activity,s.started_at)) last_activity,
                   COALESCE(SUM(s.total_tokens),0) total_tokens,
+                  COALESCE(SUM(s.input_tokens),0) input_tokens,
                   COALESCE(SUM(s.cached_input_tokens),0) cached_input_tokens
            FROM projects p LEFT JOIN sessions s USING(project_key)
            GROUP BY p.project_key ORDER BY last_activity DESC LIMIT ?""",
@@ -57,7 +58,8 @@ def _project(db: Database, project) -> dict:
     file_actions = Counter(row["action"] for row in files)
     tool_kinds = Counter("MCP" if row["kind"] == "mcp" else row["name"] for row in tools)
     highlights = _highlights(len(sessions), tools, files, test_calls, failures)
-    denominator = (project["total_tokens"] or 0) + (project["cached_input_tokens"] or 0)
+    # Cached input is included in input_tokens, so adding it again understates the rate.
+    denominator = project["input_tokens"] or 0
     return {
         "project_key": key,
         "name": project["name"],

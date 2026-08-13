@@ -7,3 +7,7 @@ Host and Origin guards reduce DNS-rebinding and cross-origin risk.
 
 The server has no authentication. Non-loopback binding prints a strong warning.
 `--no-network` is accepted and documents the already local-only behavior.
+
+Overview, Tokens, and Cost charts support 1-day, 7-day, 30-day, and 90-day
+windows. The selector changes chart buckets only; indexed-session totals and
+project breakdowns remain cumulative and are not presented as range-filtered.
