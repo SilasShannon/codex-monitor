@@ -22,6 +22,7 @@ from ..briefings import active_briefings, recent_briefings, session_briefing
 from ..config import Config
 from ..database import Database
 from ..indexer import Indexer
+from ..project_overviews import project_overviews
 from ..queries import overview, projects, session_detail, sessions
 from ..shell_learning import shell_lessons
 from ..sources.otel import OtelReceiver
@@ -157,6 +158,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self._json(briefing or {"error": "not found"}, 200 if briefing else 404)
         if parsed.path == "/api/projects":
             return self._json(projects(self.db))
+        if parsed.path == "/api/project-overviews":
+            query = parse_qs(parsed.query)
+            try:
+                limit = min(max(int(query.get("limit", [50])[0]), 1), 200)
+            except ValueError:
+                return self._json({"error": "invalid limit"}, HTTPStatus.BAD_REQUEST)
+            return self._json(project_overviews(self.db, limit))
         if parsed.path == "/api/sessions":
             query = parse_qs(parsed.query)
             try:

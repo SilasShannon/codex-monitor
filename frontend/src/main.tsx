@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom/client'
 import { Activity, BookOpen, Boxes, CircleDollarSign, Database, FolderGit2, Gauge, Search, Settings, Terminal, Wrench } from 'lucide-react'
 import './styles.css'
 
-type Page = 'Overview'|'Live'|'Explain'|'Shell'|'Sessions'|'Tokens'|'Cost'|'Tools'|'MCP'
+type Page = 'Overview'|'Live'|'Explain'|'Shell'|'Projects'|'Sessions'|'Tokens'|'Cost'|'Tools'|'MCP'
 type Overview = {active_sessions:number;sessions:number;total_tokens:number;input_tokens:number;cached_input_tokens:number;cache_write_input_tokens:number;output_tokens:number;cache_rate:number|null}
 type Cost = {today:string;['7_days']:string;['30_days']:string;all_time:string;cache_savings:string;unavailable_sessions:number}
 type Session = {session_id:string;project_name?:string;model?:string;last_activity?:string;total_tokens?:number}
@@ -14,7 +14,8 @@ type ActivityRow = {name:string;server?:string;kind:string;calls:number;successe
 type ActivityData = {scope:'tools'|'mcp';summary:{calls:number;successes:number;failures:number;unknown_outcomes:number;average_duration_ms:number|null;sessions:number;projects:number};rows:ActivityRow[];evidence_note:string}
 type ShellLesson = {command:string;executable:string;category:string;purpose:string;safety:string;parts:{syntax:string;meaning:string}[];learning_value:string;project:string;session_id?:string;timestamp?:string;success:boolean|null}
 type ShellData = {summary:{commands:number;projects:number;categories:number;failed:number};lessons:ShellLesson[];evidence_note:string}
-type Data = {overview:Overview;cost:Cost;sessions:Session[];briefings:Briefing[];explanations:Briefing[];shell:ShellData;tools:ActivityData;mcp:ActivityData;series:Point[];projects:Breakdown[];models:Breakdown[];costProjects:Breakdown[];costModels:Breakdown[];costSessions:Breakdown[]}
+type ProjectOverview = {project_key:string;name:string;path:string;sessions:number;active_sessions:number;last_activity?:string;total_tokens:number;cache_rate:number|null;estimated_api_equivalent_cost:string;priced_sessions:number;unpriced_sessions:number;tool_calls:number;test_commands:number;failed_tools:number;files_touched:number;file_actions:Record<string,number>;top_tools:{name:string;calls:number}[];models:{name:string;sessions:number}[];highlights:string[];evidence_note:string}
+type Data = {overview:Overview;cost:Cost;sessions:Session[];briefings:Briefing[];explanations:Briefing[];shell:ShellData;projectOverviews:ProjectOverview[];tools:ActivityData;mcp:ActivityData;series:Point[];projects:Breakdown[];models:Breakdown[];costProjects:Breakdown[];costModels:Breakdown[];costSessions:Breakdown[]}
 const Charts = React.lazy(()=>import('./charts'))
 
 const nav = [
@@ -22,7 +23,7 @@ const nav = [
   ['Tokens', Boxes], ['Cost', CircleDollarSign], ['Models', Boxes], ['Tools', Wrench],
   ['MCP', Boxes], ['Git', FolderGit2], ['Search', Search], ['Settings', Settings],
 ] as const
-const ready = new Set(['Overview','Live','Explain','Shell','Sessions','Tokens','Cost','Tools','MCP'])
+const ready = new Set(['Overview','Live','Explain','Shell','Projects','Sessions','Tokens','Cost','Tools','MCP'])
 const compact = (value?:number) => value==null?'Unavailable':Intl.NumberFormat('en',{notation:'compact',maximumFractionDigits:1}).format(value)
 const usd = (value?:string|number) => value==null?'Unavailable':Number(value).toLocaleString('en-US',{style:'currency',currency:'USD',minimumFractionDigits:2,maximumFractionDigits:2})
 const api = async <T,>(path:string):Promise<T> => {const response=await fetch(path);if(!response.ok)throw Error(`${response.status}`);return response.json()}
@@ -31,20 +32,20 @@ function App(){
   const [page,setPage]=React.useState<Page>('Overview'); const [data,setData]=React.useState<Data|null>(null); const [error,setError]=React.useState('')
   React.useEffect(()=>{const loadAll=()=>Promise.all([
     api<Overview>('/api/overview'),api<Cost>('/api/cost/summary'),api<Session[]>('/api/sessions?limit=8'),
-    api<Briefing[]>('/api/live/briefings'),api<Briefing[]>('/api/explain?limit=12'),api<ShellData>('/api/shell/lessons?limit=50'),api<ActivityData>('/api/tools'),api<ActivityData>('/api/mcp'),
+    api<Briefing[]>('/api/live/briefings'),api<Briefing[]>('/api/explain?limit=12'),api<ShellData>('/api/shell/lessons?limit=50'),api<ProjectOverview[]>('/api/project-overviews'),api<ActivityData>('/api/tools'),api<ActivityData>('/api/mcp'),
     api<Point[]>('/api/analytics/timeseries?days=30'),api<Breakdown[]>('/api/analytics/breakdown?dimension=project'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=model'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=project&sort=cost'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=model&sort=cost'),
     api<Breakdown[]>('/api/analytics/breakdown?dimension=session&sort=cost'),
-  ]).then(([overview,cost,sessions,briefings,explanations,shell,tools,mcp,series,projects,models,costProjects,costModels,costSessions])=>{setData({overview,cost,sessions,briefings,explanations,shell,tools,mcp,series,projects,models,costProjects,costModels,costSessions});setError('')}).catch(()=>setError('The local analytics API is unavailable.'))
+  ]).then(([overview,cost,sessions,briefings,explanations,shell,projectOverviews,tools,mcp,series,projects,models,costProjects,costModels,costSessions])=>{setData({overview,cost,sessions,briefings,explanations,shell,projectOverviews,tools,mcp,series,projects,models,costProjects,costModels,costSessions});setError('')}).catch(()=>setError('The local analytics API is unavailable.'))
     const loadLive=()=>Promise.all([api<Overview>('/api/overview'),api<Cost>('/api/cost/summary'),api<Session[]>('/api/sessions?limit=8'),api<Briefing[]>('/api/live/briefings'),api<Briefing[]>('/api/explain?limit=12'),api<ActivityData>('/api/tools'),api<ActivityData>('/api/mcp')]).then(([overview,cost,sessions,briefings,explanations,tools,mcp])=>{setData(current=>current?{...current,overview,cost,sessions,briefings,explanations,tools,mcp}:current);setError('')}).catch(()=>setError('The local analytics API is unavailable.'))
     loadAll();const liveTimer=window.setInterval(loadLive,5000);const analyticsTimer=window.setInterval(loadAll,60000);return()=>{window.clearInterval(liveTimer);window.clearInterval(analyticsTimer)}},[])
   return <div className="shell"><aside><div className="brand"><span className="brandmark">C</span><div>Codex Monitor<small>Local observability</small></div></div>
     <nav>{nav.map(([label,Icon])=><button className={page===label?'active':''} key={label} onClick={()=>ready.has(label)&&setPage(label as Page)}><Icon size={17}/><span>{label}</span>{!ready.has(label)&&<em>Soon</em>}</button>)}</nav>
     <div className="local"><span/><div>Local only<small>127.0.0.1</small></div></div></aside>
     <main><header><div><p className="eyebrow">Workspace analytics</p><h1>{page}</h1></div><div className="range">Last 30 days</div></header>
-      {error&&<div className="notice">{error}</div>}{!data?<Loading/>:page==='Overview'?<OverviewPage data={data}/>:page==='Live'?<LivePage data={data}/>:page==='Explain'?<ExplainPage data={data}/>:page==='Shell'?<ShellPage data={data.shell}/>:page==='Sessions'?<SessionsPage data={data}/>:page==='Tokens'?<TokensPage data={data}/>:page==='Cost'?<CostPage data={data}/>:page==='Tools'?<ActivityPage data={data.tools}/>:<ActivityPage data={data.mcp}/>}</main></div>
+      {error&&<div className="notice">{error}</div>}{!data?<Loading/>:page==='Overview'?<OverviewPage data={data}/>:page==='Live'?<LivePage data={data}/>:page==='Explain'?<ExplainPage data={data}/>:page==='Shell'?<ShellPage data={data.shell}/>:page==='Projects'?<ProjectsPage projects={data.projectOverviews}/>:page==='Sessions'?<SessionsPage data={data}/>:page==='Tokens'?<TokensPage data={data}/>:page==='Cost'?<CostPage data={data}/>:page==='Tools'?<ActivityPage data={data.tools}/>:<ActivityPage data={data.mcp}/>}</main></div>
 }
 
 function OverviewPage({data}:{data:Data}){return <><section className="hero-grid">
@@ -79,6 +80,9 @@ function BriefSection({title,items}:{title:string;items:string[]}){return <div c
 
 function ShellPage({data}:{data:ShellData}){return <><section className="panel explain-intro"><Terminal size={22}/><div><p className="eyebrow">Command learning</p><h2>Learn from the shell commands Codex used</h2><p>Review what each observed command does, how its pieces fit together, and what to consider before running it yourself.</p></div></section><section className="hero-grid activity-cards"><Metric label="Observed commands" value={compact(data.summary.commands)} tone="violet" hint="Most recent normalized calls"/><Metric label="Projects" value={compact(data.summary.projects)} hint="Where commands were observed"/><Metric label="Command categories" value={compact(data.summary.categories)} tone="cyan" hint="Testing, Git, search, and more"/><Metric label="Failed commands" value={compact(data.summary.failed)} hint="Explicit failures only"/></section>{data.lessons.length===0?<section className="panel empty"><h2>No shell commands observed yet</h2></section>:<section className="lesson-grid">{data.lessons.map((lesson,index)=><ShellCard lesson={lesson} key={`${lesson.session_id}-${lesson.timestamp}-${index}`}/>)}</section>}<p className="activity-evidence">{data.evidence_note}</p></>}
 function ShellCard({lesson}:{lesson:ShellLesson}){return <article className="panel shell-card"><div className="shell-head"><div><p className="eyebrow">{lesson.category} · {lesson.project}</p><h2>{lesson.executable}</h2></div><span className={`safety ${lesson.safety==='Read-only'||lesson.safety.includes('project files')?'safe':''}`}>{lesson.safety}</span></div><pre><code>{lesson.command}</code></pre><p className="shell-purpose">{lesson.purpose}</p><div className="syntax-parts">{lesson.parts.map((part,index)=><div key={`${part.syntax}-${index}`}><code>{part.syntax}</code><span>{part.meaning}</span></div>)}</div><div className="learning-note"><BookOpen size={14}/><p>{lesson.learning_value}</p></div><small className="shell-result">Observed result: {lesson.success===true?'successful':lesson.success===false?'failed':'not exposed'}</small></article>}
+
+function ProjectsPage({projects}:{projects:ProjectOverview[]}){return <><section className="panel explain-intro"><FolderGit2 size={22}/><div><p className="eyebrow">Project history</p><h2>How Codex has helped across your projects</h2><p>These summaries connect sessions, implementation activity, verification, tools, tokens, and API-equivalent estimates using only evidence the monitor observed.</p></div></section>{projects.length===0?<section className="panel empty"><h2>No associated projects yet</h2></section>:<section className="project-grid">{projects.map(project=><ProjectCard project={project} key={project.project_key}/>)}</section>}</>}
+function ProjectCard({project}:{project:ProjectOverview}){return <article className="panel project-card"><div className="project-head"><div><p className="eyebrow">{project.active_sessions?`${project.active_sessions} active now`:'Recent project'}</p><h2>{project.name}</h2><small>{project.path}</small></div><span className="project-cost">{usd(project.estimated_api_equivalent_cost)}<small>API equivalent</small></span></div><section className="project-metrics"><div><b>{project.sessions}</b><span>Sessions</span></div><div><b>{compact(project.total_tokens)}</b><span>Tokens</span></div><div><b>{project.files_touched}</b><span>Files touched</span></div><div><b>{project.test_commands}</b><span>Test commands</span></div></section><BriefSection title="Observed contribution summary" items={project.highlights}/>{project.top_tools.length>0&&<div className="project-tools"><b>Most used tools</b><div>{project.top_tools.map(tool=><span key={tool.name}>{tool.name.replaceAll('_',' ')} · {tool.calls}</span>)}</div></div>}<p className="evidence">{project.evidence_note} {project.unpriced_sessions?`${project.unpriced_sessions} session(s) could not be priced.`:''}</p></article>}
 
 function ActivityPage({data}:{data:ActivityData}){const label=data.scope==='mcp'?'MCP':'tool';return <><section className="hero-grid activity-cards">
   <Metric label={`${label} calls`} value={compact(data.summary.calls)} tone="violet" hint={`${data.summary.sessions} sessions`}/>
