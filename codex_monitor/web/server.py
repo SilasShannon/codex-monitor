@@ -27,6 +27,7 @@ from ..project_guides import project_guide
 from ..project_overviews import project_overviews
 from ..queries import overview, projects, session_detail, sessions
 from ..search import search
+from ..settings import settings_summary
 from ..shell_learning import shell_lessons
 from ..sources.otel import OtelReceiver
 
@@ -127,6 +128,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/search":
             query = parse_qs(parsed.query).get("q", [""])[0]
             return self._json(search(self.db, query))
+        if parsed.path == "/api/settings":
+            return self._json(settings_summary(self.config, self.db))
         if parsed.path == "/api/shell/lessons":
             query = parse_qs(parsed.query)
             try:
