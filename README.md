@@ -113,7 +113,8 @@ See [architecture](docs/architecture.md), [OpenTelemetry](docs/opentelemetry.md)
 [token accounting](docs/tokens.md), [cost calculations](docs/cost-calculations.md),
 [live monitoring](docs/live-monitoring.md), [tool and MCP analytics](docs/tool-mcp-analytics.md),
 [session explanations](docs/session-explanations.md), [shell learning](docs/shell-learning.md),
-[project overviews](docs/project-overviews.md), [WSL2](docs/wsl.md), and
+[project overviews](docs/project-overviews.md), [project learning guides](docs/project-guides.md),
+[WSL2](docs/wsl.md), and
 [privacy/security](docs/privacy-security.md).
 
 ## Attribution
