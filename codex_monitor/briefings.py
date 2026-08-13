@@ -99,7 +99,9 @@ def session_briefing(db: Database, session_id: str) -> dict | None:
         "active": bool(session["active"]),
         "last_activity": session["last_activity"],
         "request": request,
-        "plain_language_status": _status(bool(session["active"]), request, latest_update),
+        "plain_language_status": _status(
+            bool(session["active"]), request, latest_update, phase, test_runs, files, tools
+        ),
         "phase": phase,
         "activity_story": activity_story,
         "questions_to_ask": _questions(test_runs, files, concepts),
@@ -148,7 +150,8 @@ def _tool_label(row) -> str:
     return str(row["name"]).replace("_", " ")
 
 
-def _status(active: bool, request: str | None, latest: str | None) -> str:
+def _status(active: bool, request: str | None, latest: str | None, phase: str,
+            test_runs, files, tools) -> str:
     state = "This session has recent activity" if active else "This session is not currently active"
     if request and latest:
         return f"{state}. The request is “{request}”. The latest visible Codex update says: “{latest}”"
@@ -156,6 +159,12 @@ def _status(active: bool, request: str | None, latest: str | None) -> str:
         return f"{state}. The request is “{request}”."
     if latest:
         return f"{state}. The latest visible Codex update says: “{latest}”"
+    if test_runs:
+        return f"{state}. Observed phase: {phase}, based on {len(test_runs)} test command(s)."
+    if files:
+        return f"{state}. Observed phase: {phase}, based on activity in {len(files)} file(s)."
+    if tools:
+        return f"{state}. Observed phase: {phase}, based on {len(tools)} tool call(s)."
     return f"{state}, but there is not enough visible evidence to describe its progress yet."
 
 

@@ -9,7 +9,7 @@ The official Codex documentation lists structured events including
 `codex.tool_result`. Completed response events include token counts. Raw prompt
 content remains redacted unless `otel.log_user_prompt` is explicitly enabled.
 
-Codex Monitor receives OTLP/HTTP JSON logs, metrics, and traces at:
+Codex Monitor receives OTLP/HTTP JSON or protobuf logs, metrics, and traces at:
 
 ```text
 http://127.0.0.1:4318/v1/logs
@@ -31,9 +31,10 @@ trace_exporter = { otlp-http = { endpoint = "http://127.0.0.1:4318/v1/traces", p
 Codex configuration must be inspected and backed up before an approved setup
 flow merges this block. External forwarding remains opt-in.
 
-Gauge, sum, and histogram metric points are normalized into SQLite. Trace IDs,
-span IDs, parent relationships, timing, status, session, model, and sanitized
-attributes are retained. OTLP protobuf remains future work.
+Set an exporter protocol to `binary` to use OTLP/HTTP protobuf instead of
+`json`; both encodings use the same endpoints. Gauge, sum, and histogram metric
+points are normalized into SQLite. Trace IDs, span IDs, parent relationships,
+timing, status, session, model, and sanitized attributes are retained.
 
 ## Live verification on Codex CLI 0.147.0
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 from codex_monitor.sources.otel import parse_otlp_logs, parse_otlp_metrics, parse_otlp_traces
+from codex_monitor.sources.otel.receiver import _decode_payload
 
 
 def test_parse_otlp_json_log() -> None:
@@ -60,3 +63,45 @@ def test_parse_otlp_metric_points() -> None:
     assert points[0].sum == 42.5
     assert points[0].model == "gpt-5.6-sol"
     assert points[1].value == 3
+
+
+def test_decode_otlp_protobuf_log() -> None:
+    from google.protobuf.json_format import ParseDict
+    from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+
+    message = ParseDict({"resourceLogs": [{"scopeLogs": [{"logRecords": [{
+        "timeUnixNano": "1704067200000000000",
+        "body": {"stringValue": "codex.sse_event"},
+        "attributes": [{
+            "key": "conversation.id", "value": {"stringValue": "protobuf-session"},
+        }],
+    }]}]}]}, ExportLogsServiceRequest())
+
+    payload, response, content_type = _decode_payload(
+        "/v1/logs", "application/x-protobuf", message.SerializeToString()
+    )
+    records = parse_otlp_logs(payload)
+
+    assert records[0].name == "codex.sse_event"
+    assert records[0].session_id == "protobuf-session"
+    assert response == b""
+    assert content_type == "application/x-protobuf"
+
+
+def test_decode_otlp_json_with_content_type_parameter() -> None:
+    payload, response, content_type = _decode_payload(
+        "/v1/logs", "application/json; charset=utf-8", b'{"resourceLogs": []}'
+    )
+    assert payload == {"resourceLogs": []}
+    assert response == b"{}"
+    assert content_type == "application/json"
+
+
+def test_reject_invalid_otlp_protobuf() -> None:
+    with pytest.raises(ValueError, match="invalid OTLP protobuf payload"):
+        _decode_payload("/v1/traces", "application/x-protobuf", b"not protobuf")
+
+
+def test_reject_unsupported_otlp_media_type() -> None:
+    with pytest.raises(LookupError):
+        _decode_payload("/v1/metrics", "text/plain", b"{}")
